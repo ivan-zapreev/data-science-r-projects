@@ -22,7 +22,7 @@ library(tidyverse)
 and load the data we already wrangled:
 
 ```{r}
-load("rdas/murders.rda")
+load("rda/murders.rda")
 ```
 
 ## Murder rate by state 
