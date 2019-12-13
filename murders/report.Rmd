@@ -25,6 +25,11 @@ and load the data we already wrangled:
 load("rda/murders.rda")
 ```
 
+```{r, echo=F}
+n <- nrow(murders)
+```
+Here `r n` cars are compared
+
 ## Murder rate by state 
 
 We note the large state to state variability by generating a barplot showing the murder rate by state:
