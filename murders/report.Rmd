@@ -2,7 +2,7 @@
 title: "Report on Gun Murders"
 author: "Ivan S. Zapreev"
 date: "`r format(Sys.Date())`"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
