@@ -74,3 +74,29 @@ dat %>%
   unite(variable_name, first_variable_name, second_variable_name, sep="_") %>%
   spread(variable_name, value) %>%
   rename(fertility = fertility_NA)
+
+data <- read_table("data/s2.1.a1.q5.csv")
+data %>% spread(year, time)
+
+data <- read_table("data/s2.1.a1.q6.csv")
+data %>% spread(var1, people)
+
+data <- read_csv("data/s2.1.a1.q7.csv")
+data %>% gather(key, value, -age_group) %>%
+         separate(col = key, into = c("year", "variable_name"), sep = "_")  %>%
+         spread(variable_name, value)
+
+data <- read_csv("data/s2.1.a1.q8.csv")
+data %>% separate(col=key, c("player", "variable_name"), extra="merge") %>%
+         spread(variable_name, value)
+
+co2_wide <- data.frame(matrix(co2, ncol = 12, byrow = TRUE)) %>% 
+  setNames(1:12) %>%
+  mutate(year = as.character(1959:1997))
+co2_tidy <- co2_wide %>% gather(month, co2, -year)
+co2_tidy %>% ggplot(aes(as.numeric(month), co2, color = year)) + geom_line()
+
+library(dslabs)
+data(admissions)
+dat <- admissions %>% select(-applicants)
+
