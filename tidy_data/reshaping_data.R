@@ -99,4 +99,8 @@ co2_tidy %>% ggplot(aes(as.numeric(month), co2, color = year)) + geom_line()
 library(dslabs)
 data(admissions)
 dat <- admissions %>% select(-applicants)
+dat %>% spread(gender, admitted)
 
+tmp <- gather(admissions, key, value, admitted:applicants)
+tmp2 <- unite(tmp, column_name, c(key, gender))
+tmp2 %>% spread(column_name, value)
