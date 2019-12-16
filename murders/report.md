@@ -21,6 +21,8 @@ and load the data we already wrangled:
 load("rda/murders.rda")
 ```
 
+Here 51 cars are compared
+
 ## Murder rate by state
 
 We note the large state to state variability by generating a barplot
