@@ -229,9 +229,3 @@ identical(data, data4)
 identical(data, data5)
 identical(data, data6)
 identical(data, data7)
-
-
-
-
-
-
