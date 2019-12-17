@@ -273,12 +273,3 @@ s %>%
   str_replace("\\s*(feet|foot|ft)\\s*", "'") %>% 
   str_replace("\\s*(inches|in|''|\")\\s*", "") %>% 
   str_replace("^([4-7])\\s*[,\\.\\s+]\\s*(\\d*)$", "\\1'\\2")
-
-
-
-
-
-
-
-
-
