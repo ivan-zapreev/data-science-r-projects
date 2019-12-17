@@ -1,6 +1,7 @@
 # inspect the startdate column of 2016 polls data, a Date type
 library(tidyverse)
 library(dslabs)
+library(lubridate)
 data("polls_us_election_2016")
 polls_us_election_2016$startdate %>% head
 class(polls_us_election_2016$startdate)
@@ -11,6 +12,7 @@ polls_us_election_2016 %>% filter(pollster == "Ipsos" & state =="U.S.") %>%
   ggplot(aes(startdate, rawpoll_trump)) +
   geom_line()
 
+#-----------------------------------------------
 # lubridate: the tidyverse date package
 library(lubridate)
 
