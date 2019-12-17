@@ -1,0 +1,7 @@
+library(tidytext)
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(scales)
+set.seed(1)
