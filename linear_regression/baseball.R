@@ -16,6 +16,7 @@ library(Lahman)
 library(tidyverse)
 library(dslabs)
 ds_theme_set()
+options(digits = 3)
 
 #Scatterplot of the relationship between HRs and wins
 Teams %>% filter(yearID %in% 1961:2001) %>%
@@ -46,16 +47,28 @@ Teams %>% filter(yearID %in% 1961:2001) %>%
   mutate(AB_per_game = AB / G, R_per_game = R / G) %>%
   ggplot(aes(R_per_game, AB_per_game)) + 
   geom_point(alpha = 0.5)
+#compute correlation
+Teams %>%  filter(yearID %in% 1961:2001) %>%
+  mutate(AB_per_game = AB / G, R_per_game = R / G) %>%
+  summarize(r = cor(AB_per_game, R_per_game)) %>% pull(r)
 
 #Scatterplot of the relationship between number of wins per game and fielding errors 
 Teams %>% filter(yearID %in% 1961:2001) %>%
   mutate(W_per_game = W / G, E_per_game = E / G) %>%
   ggplot(aes(W_per_game, E_per_game)) + 
   geom_point(alpha = 0.5)
+#compute correlation
+Teams %>%  filter(yearID %in% 1961:2001) %>%
+  mutate(W_per_game = W / G, E_per_game = E / G) %>%
+  summarize(r = cor(W_per_game, E_per_game)) %>% pull(r)
 
 #Scatterplot of the relationship between triples (X3B) per game and doubles (X2B) per game 
 Teams %>% filter(yearID %in% 1961:2001) %>%
   mutate(X3B_per_game = X3B / G, X2B_per_game = X2B / G) %>%
   ggplot(aes(X3B_per_game, X2B_per_game)) + 
   geom_point(alpha = 0.5)
+#compute correlation
+Teams %>%  filter(yearID %in% 1961:2001) %>%
+  mutate(X3B_per_game = X3B / G, X2B_per_game = X2B / G) %>%
+  summarize(r = cor(X2B_per_game, X3B_per_game)) %>% pull(r)
 
