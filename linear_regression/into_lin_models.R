@@ -25,8 +25,6 @@ Teams %>%
   mutate(Singles = (H-HR-X2B-X3B)/G, BB = BB/G, HR = HR/G) %>%  
   summarize(cor(BB, HR), cor(Singles, HR), cor(BB,Singles))
 
-#------------------------------------------------------------------------
-
 # stratfy HR per game to nearest 10, filter out strata with few points
 dat <- Teams %>% filter(yearID %in% 1961:2001) %>%
   mutate(HR_strata = round(HR/G, 1), 
