@@ -200,5 +200,81 @@ max(accuracy$test)
 
 #Q1
 
+#Previously, we used logistic regression to predict sex based on height.
+#Now we are going to use knn to do the same. 
+# (1) Set the seed to 1
+# (2) Use the caret package to partition the dslabs "heights" data
+#     into a training and test set of equal size. 
+# (3) Use the sapply function to perform knn with
+#     k values of seq(1, 101, 3)
+# (4) Calculate F1 scores with the F_meas function using the default 
+#     value of the argument relevant.
+
+library(dslabs)
+data(heights)
+
+#Set the seed to 1,
+set.seed(1, sample.kind="Rounding") # if using R 3.6 or later
+
+#Partition the data into a training and test set of equal size
+y <- heights$sex
+test_index <- createDataPartition(y, times = 1, p = 0.5, list = FALSE)
+train_set <- heights %>% slice(-test_index)
+test_set <- heights %>% slice(test_index)
+
+#Use the sapply function to perform knn with k values of seq(1, 101, 3)
+ks = seq(1,101,3)
+F1_scores <- sapply(ks, function(k){
+  fit_knn <- knn3(sex~height, data=train_set, k = k)
+  p_hat <- predict(fit_knn, test_set)
+  y_hat <- ifelse(p_hat[,2] > 0.5, "Male", "Female") %>%
+    factor(levels=levels(test_set$sex))
+  #Calculate F1 scores with the F_meas function
+  F_meas(data = y_hat, reference = test_set$sex)
+})
+
+#What is the max value of F_1?
+max(F1_scores)
+
+#At what value of k does the max occur?
+ks[which.max(F1_scores)]
+
+#Q2
+
+# Q2
+
+#Next we will use the same gene expression example used in the Comprehension Check:
+#Distance exercises. You can load it like this:
+
+library(dslabs)
+data("tissue_gene_expression")
+
+#First, set the seed to 1 and split the data into training and test sets.
+#Then, report the accuracy you obtain for k = 1, 3, 5, 7, 9, 11 using
+#sapply or map_df. 
+#Note: use the createDataPartition function outside of sapply or map_df.
+
+#Set the seed to 1,
+set.seed(1, sample.kind="Rounding") # if using R 3.6 or later
+
+#Partition the data into a training and test set of equal size
+y <- tissue_gene_expression$y
+test_index <- createDataPartition(y, times = 1, p = 0.5, list = FALSE)
+train_set <- as_tibble(tissue_gene_expression) %>% slice(-test_index)
+test_set <- as_tibble(tissue_gene_expression) %>% slice(test_index)
+
+ks = seq(1,11,2)
+
+accuracy <- map_df(ks, function(k){
+  fit_knn <- knn3(y~x, data=train_set, k = k)
+  y_hat <- predict(fit_knn, test_set, type="class") %>% 
+    factor(levels=levels(test_set$y))
+  
+  #Calculate F1 scores with the F_meas function
+  list(k = k,
+       accuracy = confusionMatrix(y_hat, test_set$y)$overall["Accuracy"] )
+})
+
+accuracy
 
 #-------------------------------------------------------
