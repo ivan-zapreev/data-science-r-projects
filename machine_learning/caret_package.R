@@ -214,5 +214,52 @@ imp
 #--------------------------------------------------------
 #Titanic Exercises
 
+#The Titanic was a British ocean liner that struck an iceberg and sunk on its
+#maiden voyage in 1912 from the United Kingdom to New York. More than 1,500 of
+#the estimated 2,224 passengers and crew died in the accident, making this one
+#of the largest maritime disasters ever outside of war. The ship carried a wide
+#range of passengers of all ages and both genders, from luxury travelers in
+#first-class to immigrants in the lower classes. However, not all passengers
+#were equally likely to survive the accident. You will use real data about a
+#selection of 891 passengers to predict which passengers survived.
+
+#Libraries and data
+
+#Use the titanic_train data frame from the titanic library as the starting
+#point for this project.
+
+library(titanic)    # loads titanic_train data frame
+library(caret)
+library(tidyverse)
+library(rpart)
+
+# 3 significant digits
+options(digits = 3)
+
+# clean the data - `titanic_train` is loaded with the titanic package
+titanic_clean <- titanic_train %>%
+  mutate(Survived = factor(Survived),
+         Embarked = factor(Embarked),
+         Age = ifelse(is.na(Age), median(Age, na.rm = TRUE), Age), # NA age to median age
+         FamilySize = SibSp + Parch + 1) %>%    # count family members
+  select(Survived,  Sex, Pclass, Age, Fare, SibSp, Parch, FamilySize, Embarked)
+
+#Q1
+
+#Split titanic_clean into test and training sets - after running the setup code,
+#it should have 891 rows and 9 variables.
+
+#Set the seed to 42, then use the caret package to create a 20% data partition
+#based on the Survived column. Assign the 20% partition to test_set and the
+#remaining 80% partition to train_set.
+
+#How many observations are in the training set?
 
 
+#How many observations are in the test set?
+
+
+#What proportion of individuals in the training set survived?
+
+
+#Q2
