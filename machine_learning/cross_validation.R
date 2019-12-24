@@ -119,7 +119,7 @@ m <- median(income)
 m
 
 #set.seed(1995)
-use set.seed(1995, sample.kind="Rounding") #instead if using R 3.6 or later
+set.seed(1995, sample.kind="Rounding") #instead if using R 3.6 or later
 N <- 250
 X <- sample(income, N)
 M<- median(X)

@@ -5,7 +5,7 @@
 library("caret")
 data("heights")
 y <- heights$height
-set.seed(2)
+set.seed(2, sample.kind = "Rounding")
 test_index <- createDataPartition(y, times = 1, p = 0.5, list = FALSE)
 train_set <- heights %>% slice(-test_index)
 test_set <- heights %>% slice(test_index)
