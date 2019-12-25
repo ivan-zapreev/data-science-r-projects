@@ -642,4 +642,3 @@ confusionMatrix(y_hat_rf, test_set$Survived)$overall["Accuracy"]
 #What is the most important variable?
 
 varImp(fit_rf)
-
