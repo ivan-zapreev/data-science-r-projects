@@ -4,6 +4,7 @@
 library(dslabs)
 library(tidyverse)
 library(caret)
+library(stringr)
 data("movielens")
 set.seed(755)
 test_index <- createDataPartition(y = movielens$rating, times = 1,
@@ -171,6 +172,8 @@ rmse_results %>% knitr::kable()
 #--------------------------------------------------------
 #Comprehension Check: Regularization
 
+options(digits=3)
+
 #The exercises in Q1-Q8 work with a simulated dataset for 1000 schools.
 #This pre-exercise setup walks you through the code needed to simulate
 #the dataset.
@@ -223,23 +226,250 @@ schools <- schools %>% mutate(score = sapply(scores, mean))
 #What are the top schools based on the average score? Show just the ID,
 #size, and the average score.
 
+options(digits = 3)
+
+ordered_schools_scores <- schools %>%
+  arrange(desc(score)) %>% 
+  select(id, size, score)
+top_10_schools <- ordered_schools_scores %>% slice(1:10)
+top_10_schools
+
 #Report the ID of the top school and average score of the 10th school.
 
 #What is the ID of the top school?
 #Note that the school IDs are given in the form "PS x" - where x is a number.
 #Report the number only.
-
-
+str_extract(ordered_schools_scores$id[1], "\\d+")
 
 #What is the average score of the 10th school?
+ordered_schools_scores$score[10]
+
+#Q2:
+
+#Compare the median school size to the median school size of the top 10 schools based on the score.
+
+options(digits = 4)
+
+#What is the median school size overall?
+
+median(ordered_schools_scores$size)
+
+#What is the median school size of the of the top 10 schools based on the score?
+
+median(top_10_schools$size)
+
+#Q3:
+
+#According to this analysis, it appears that small schools produce better test 
+#scores than large schools. Four out of the top 10 schools have 100 or fewer 
+#students. But how can this be? We constructed the simulation so that quality 
+#and size were independent. Repeat the exercise for the worst 10 schools.
+
+bottom_10_schools <- ordered_schools_scores %>% arrange(score) %>% slice(1:10)
+bottom_10_schools
+
+#What is the median school size of the bottom 10 schools based on the score?
+
+median(bottom_10_schools$size)
+
+#Q4:
+
+#From this analysis, we see that the worst schools are also small. 
+#Plot the average score versus school size to see what's going on. 
+#Highlight the top 10 schools based on the true quality.
+
+school_stats <- ordered_schools_scores %>%
+  group_by(size) %>%
+  summarize(avg = mean(score),
+            se=sd(score),
+            cnt=n())
+school_stats
+
+true_top_10 <- schools %>%
+  arrange(desc(quality)) %>% 
+  select(id, size, quality, score) %>%
+  slice(1:10)
+true_top_10
+
+true_bottom_10 <- schools %>%
+  arrange(quality) %>% 
+  select(id, size, quality, score) %>%
+  slice(1:10)
+true_bottom_10
+
+ggplot() + 
+  geom_point(data = ordered_schools_scores, aes(size, score, alpha=0.2)) + 
+  geom_smooth(data = ordered_schools_scores, aes(size, score), method="lm") +
+  geom_point(data = true_top_10, aes(size, score), color="blue") +
+  geom_point(data = true_bottom_10, aes(size, score), color="red")
+
+#What do you observe?
+  
+#The standard error of the score has larger variability when the school is smaller,
+#which is why both the best and the worst schools are more likely to be small. 
+
+#Q5:
+
+#Let's use regularization to pick the best schools. Remember regularization shrinks
+#deviations from the average towards 0. To apply regularization here, we first need
+#to define the overall average for all schools, using the following code:
+
+overall_score_mean <- mean(sapply(scores, mean))
+overall_score_mean
+
+#Then, we need to define, for each school, how it deviates from that average.
+
+#Write code that estimates the score above the average for each school but dividing
+#by 𝑛+𝛼 instead of 𝑛, with 𝑛 the school size and 𝛼 a regularization parameter. Try 𝛼=25.
+
+alpha <- 25
+
+reg_score <- function(school_scores) {
+  b_i <- sum(school_scores - overall_score_mean)/(length(school_scores) + alpha)
+  overall_score_mean + b_i
+}
+
+schools <- schools %>% mutate(reg_score = sapply(scores, reg_score))
+
+top_10_reg <- schools %>%
+  arrange(desc(reg_score)) %>% 
+  select(id, size, quality, score, reg_score) %>%
+  slice(1:10)
+top_10_reg
+
+#What is the ID of the top school with regularization?
+#Note that the school IDs are given in the form "PS x" - where x is a number.
+#Report the number only.
+str_extract(top_10_reg$id[1], "\\d+")
+
+#What is the regularized score of the 10th school?
+top_10_reg$reg_score[10]
 
 
+true_top_10 <- schools %>%
+  arrange(desc(quality)) %>% 
+  select(id, size, quality, reg_score) %>%
+  slice(1:10)
+true_top_10
 
+true_bottom_10 <- schools %>%
+  arrange(quality) %>% 
+  select(id, size, quality, reg_score) %>%
+  slice(1:10)
+true_bottom_10
 
+ggplot() + 
+  geom_point(data = schools, aes(size, reg_score, alpha=0.2)) + 
+  geom_smooth(data = schools, aes(size, reg_score), method="lm") +
+  geom_point(data = true_top_10, aes(size, reg_score), color="blue") +
+  geom_point(data = true_bottom_10, aes(size, reg_score), color="red")
 
+#Q6:
 
+#Notice that this improves things a bit. The number of small schools that
+#are not highly ranked is now lower. Is there a better 𝛼? Using value of 
+# 𝛼 from 10 to 250, find the 𝛼 that minimizes the RMSE.
 
+alpha_seq <- 10:250
 
+schools <- schools %>% select(-reg_score)
+
+delta_values_score <- function(school_scores) {
+  d_i = sum(school_scores - overall_score_mean)
+  n_i <- length(school_scores)
+  data.frame(d_i=d_i, n_i=n_i)
+}
+
+dat <- lapply(scores, delta_values_score)
+schools <- bind_cols(schools, bind_rows(dat))
+
+compute_rmse <-function(alpha) {
+  predicted_ratings <- schools %>% 
+    mutate(b_i = d_i/(n_i + alpha)) %>%
+    mutate(pred = overall_score_mean + b_i) %>%
+    pull(pred)
+  RMSE(schools$quality, predicted_ratings)
+}
+
+dat <- data.frame(alpha_seq = alpha_seq, rmse = sapply(alpha_seq, compute_rmse))
+
+dat %>%
+  ggplot(aes(alpha_seq, rmse)) + 
+  geom_point()
+
+#What value of 𝛼 gives the minimum RMSE?
+alpha_seq[which.min(dat$rmse)]
+
+#Q7
+
+#Rank the schools based on the average obtained with the best 𝛼.
+#Note that no small school is incorrectly included.
+
+alpha <- alpha_seq[which.min(dat$rmse)]
+alpha
+
+comp_reg_score <- function(school_scores) {
+  b_i <- sum(school_scores - overall_score_mean)/(length(school_scores) + alpha)
+  overall_score_mean + b_i
+}
+
+schools <- schools %>% mutate(reg_score = sapply(scores, comp_reg_score))
+
+top_10_reg <- schools %>%
+  arrange(desc(reg_score)) %>% 
+  select(id, size, quality, score, reg_score) %>%
+  slice(1:10)
+top_10_reg
+
+#What is the ID of the top school now?
+str_extract(top_10_reg$id[1], "\\d+")
+
+#What is the regularized average score of the 10th school now?
+top_10_reg$reg_score[10]
+
+#Q8:
+
+#A common mistake made when using regularization is shrinking values
+#towards 0 that are not centered around 0. For example, if we don't
+#subtract the overall average before shrinking, we actually obtain a
+#very similar result. Confirm this by re-running the code from the
+#exercise in Q6 but without removing the overall mean.
+
+alpha_seq <- 10:250
+
+#By setting the mean to zero we assume that the values are centered arround zero
+overall_score_mean <- 0
+
+schools <- schools %>% select(-d_i, -n_i)
+schools <- schools %>% select(-d_i1, -n_i1)
+schools <- schools %>% select(-d_i2, -n_i2)
+schools
+
+delta_values_score <- function(school_scores) {
+  d_i = sum(school_scores-overall_score_mean)
+  n_i <- length(school_scores)
+  data.frame(d_i=d_i, n_i=n_i)
+}
+
+dat <- lapply(scores, delta_values_score)
+schools <- bind_cols(schools, bind_rows(dat))
+
+compute_rmse <-function(alpha) {
+  predicted_ratings <- schools %>% 
+    mutate(b_i = d_i/(n_i + alpha)) %>%
+    mutate(pred = overall_score_mean + b_i) %>%
+    pull(pred)
+  RMSE(schools$quality, predicted_ratings)
+}
+
+dat <- data.frame(alpha_seq = alpha_seq, rmse = sapply(alpha_seq, compute_rmse))
+
+dat %>%
+  ggplot(aes(alpha_seq, rmse)) + 
+  geom_point()
+
+#What value of 𝛼 gives the minimum RMSE her?
+alpha_seq[which.min(dat$rmse)]
 
 
 

@@ -17,7 +17,8 @@ murders_raw <- read_html(url) %>%
 # class(murders_raw$murder_rate)
 str(murders_raw)
 
-murders_num <- murders_raw %>% mutate(state = factor(state), population = parse_number(population), total = parse_number(total))
+murders_num <- murders_raw %>%
+  mutate(state = factor(state), population = parse_number(population), total = parse_number(total))
 str(murders_num)
 
 #Function to detect commas
