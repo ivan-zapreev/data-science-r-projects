@@ -348,17 +348,89 @@ s$v[,1]/sum(s$v[,1])
 #How does the first column relate to the others, and how does this relate to 
 #taking an average?
   
-#The first column is very close to being a constant, which implies that the first column of YV is the sum of the rows of Y multiplied by some constant, and is thus proportional to an average
-#. 
+#The first column is very close to being a constant, which implies that the first 
+#column of YV is the sum of the rows of Y multiplied by some constant, and is thus 
+#proportional to an average. 
 
 #-------------------------------------------------------------
-#Comprehension 
-#Check: Clustering
+#Comprehension Check: Clustering
 
+#Q1:
 
+#Load the tissue_gene_expression dataset. Remove the row means and compute the 
+#distance between each observation. Store the result in d.
 
+data(tissue_gene_expression)
 
+#Which of the following lines of code correctly does this computation?
 
+d <- dist(tissue_gene_expression$x - rowMeans(tissue_gene_expression$x)) 
 
+#Q2:
 
+#Make a hierarchical clustering plot and add the tissue types as labels.
 
+h <- hclust(d)
+
+#You will observe multiple branches.
+
+plot(h, cex = 0.65, main = "", xlab = "")
+
+#Which tissue type is in the branch farthest to the left?
+  
+#liever
+
+#Q3:
+
+#Run a k-means clustering on the data with 𝐾=7. Make a table comparing the 
+#identified clusters to the actual tissue types. Run the algorithm several
+#times to see how the answer changes.
+
+library(stringr)
+
+x_0 <- tissue_gene_expression$x
+x_0[is.na(x_0)] <- 0
+k <- kmeans(x_0, centers = 7)
+
+groups <- k$cluster
+
+dat <- data.frame( name=rownames(as.matrix(groups)), group=groups) %>%
+  filter(str_detect(name, "liver_.*"))
+
+#What do you observe for the clustering of the liver tissue?
+ggplot(dat, aes(name, group)) + 
+  geom_point()
+
+run_kmeans <- function(idx) {
+  k <- kmeans(x_0, centers = 7)
+  groups <- k$cluster
+  dat <- data.frame( name=rownames(as.matrix(groups)), group=groups) %>%
+    filter(str_detect(name, "liver_.*"))
+  min(dat$group) == max(dat$group)
+}
+
+mean(sapply(1:10000, run_kmeans))
+
+#Q4:
+
+#Select the 50 most variable genes. Make sure the observations show 
+#up in the columns, that the predictor are centered, and add a color 
+#bar to show the different tissue types. Hint: use the ColSideColors 
+#argument to assign colors. Also, use col = RColorBrewer::brewer.pal(11, "RdBu") 
+#for a better use of colors.
+
+#Part of the code is provided for you here:
+  
+library(RColorBrewer)
+sds <- matrixStats::colSds(tissue_gene_expression$x)
+ind <- order(sds, decreasing = TRUE)[1:50]
+colors <- brewer.pal(7, "Dark2")[as.numeric(tissue_gene_expression$y)]
+#BLANK
+
+#Which line of code should replace #BLANK in the code above?
+heatmap(t(tissue_gene_expression$x[,ind]), col = brewer.pal(11, "RdBu"), scale = "row", ColSideColors = color
+#The first one as others mess up the order of the colors that is to correspond with the tissue_gene_expression$y
+s)
+heatmap(t(tissue_gene_expression$x[,ind]), col = brewer.pal(11, "RdBu"), scale = "row", ColSideColors = rev(c#heatmap(t(tissue_gene_expression$x[,ind]), col = brewer.pal(11, "RdBu"), scale = "row", ColSideColors = rev(colors))
+#heatmap(t(tissue_gene_expression$x[,ind]), col = brewer.pal(11, "RdBu"), scale = "row", ColSideColors = sample(colors))
+#e(colors))
