@@ -1,5 +1,5 @@
 ---
-title: "Report on Movielens"
+title: "Movielens Recommendation System"
 author: "Dr. Ivan S. Zapreev"
 date: "`r format(Sys.Date())`"
 output: pdf_document
@@ -7,11 +7,23 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-report_data <- load("movielens_report.dat")
+load("movielens_report.rda")
 ```
+
+*[According to Wikipedia](https://en.wikipedia.org/wiki/Recommender_system):*
+
+> A recommender system or a recommendation system (sometimes replacing 'system' with a synonym such as platform or engine) is a subclass of information filtering system that seeks to predict the "rating" or "preference" a user would give to an item.
 
 ## Introduction
 <!--an introduction/overview/executive summary section that describes the dataset and summarizes the goal of the project and key steps that were performed-->
+
+Recommendation systems are widely used in commercial application to provide targeted commercials or suggest online content, and etc. For example, one can think of *Spotify* suggesting new songs or *Youtube* proposing **"Recommended"** videos. The main goal of a recomendation system is to, as accurately as possible, predict the client's preferences, based on the available user data.
+
+In this study we attempt to build a movie recomendation system based on the `r report_data$data_set_name` available via the [this link](`r report_data$data_set_site_url`). For this we shall use the techniques given within the *HarvardX: PH125.8x Data Science: Machine Learning* course and other courses which are part of the HarvardX *Data Science Professional* certification program.
+
+### Dataset overview
+
+### Executive summary
 
 ## Analysis
 <!--a methods/analysis section that explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach-->

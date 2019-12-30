@@ -2,6 +2,7 @@
 # Section to define and load needed packages
 ####################################################################
 
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
@@ -13,11 +14,11 @@ if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.
 MOVIELENS_DATA_SET_NAME <- "MovieLens 10M dataset"
 MOVIELENS_DATA_SET_SITE_URL <- "https://grouplens.org/datasets/movielens/10m/"
 MOVIELENS_DATA_SET_FILE_URL <- "http://files.grouplens.org/datasets/movielens/ml-10m.zip"
-MOVIELENS_DATA_FILE_NAME <- "movielens.dat"
+MOVIELENS_DATA_FILE_NAME <- "movielens_initial.rda"
 RATINGS_DAT_FILE_NAME <- "ml-10M100K/ratings.dat"
 MOVIES_DAT_FILE_NAME <- "ml-10M100K/movies.dat"
 VALIDATION_SET_PROPORTION <- 0.1
-MOVIELENS_REPORT_DATA_FILE_NAME <- "movielens_report.dat"
+MOVIELENS_REPORT_DATA_FILE_NAME <- "movielens_report.rda"
 
 ####################################################################
 # Section to define helper functions
@@ -56,21 +57,21 @@ create_movielens_sets <- function() {
         "into a temporary file:", dl, "\n")
     download.file(MOVIELENS_DATA_SET_FILE_URL, dl)
     
-    cat("Unzipping the files:", RATINGS_DAT_FILE_NAME, "and ", MOVIES_DAT_FILE_NAME, "\n")
+    cat("Unzipping the files:", RATINGS_DAT_FILE_NAME, "and", MOVIES_DAT_FILE_NAME, "\n")
     unzip(dl, RATINGS_DAT_FILE_NAME)
     unzip(dl, MOVIES_DAT_FILE_NAME)
   } else {
-    cat("The ", RATINGS_DAT_FILE_NAME, "and", MOVIES_DAT_FILE_NAME,
-        "are locally present, no need to re-download from", MOVIELENS_DATA_SET_FILE_URL, "\n")
+    cat("The", RATINGS_DAT_FILE_NAME, "and", MOVIES_DAT_FILE_NAME, "are locally present\n")
+    cat("No need to re-download them from", MOVIELENS_DATA_SET_FILE_URL, "\n")
   }
   
   #Read the movie ratings from the downloaded file
-  cat("Reading", RATINGS_DAT_FILE_NAME, "data from the temporary file\n")
+  cat("Reading data from", RATINGS_DAT_FILE_NAME, "\n")
   ratings <- fread(text = gsub("::", "\t", readLines(RATINGS_DAT_FILE_NAME)),
                    col.names = c("userId", "movieId", "rating", "timestamp"))
   
   #Read the movies from the downloaded file
-  cat("Reading", MOVIES_DAT_FILE_NAME, "data from the temporary file\n")
+  cat("Reading data from", MOVIES_DAT_FILE_NAME, "\n")
   movies <- str_split_fixed(readLines(MOVIES_DAT_FILE_NAME), "\\::", 3)
   colnames(movies) <- c("movieId", "title", "genres")
   
@@ -115,7 +116,7 @@ create_movielens_sets <- function() {
   rm(ratings, movies, test_index, temp, movielens, removed)
   
   cat("Finished preparing the data, creating the final data frame\n");
-  list(edx=edx, validation=validation)
+  return(list(edx=edx, validation=validation))
 }
 
 #--------------------------------------------------------------------
@@ -135,36 +136,45 @@ get_movielens_data <- function() {
   cat("Checkin if the Movielens data is stored in:", MOVIELENS_DATA_FILE_NAME,"\n")
   if(!file.exists(MOVIELENS_DATA_FILE_NAME)){
     cat("The data is not stored in", MOVIELENS_DATA_FILE_NAME, "start re-generating\n")
-    dat <- create_movielens_sets()
+    ml_data <- create_movielens_sets()
+    
     cat("The data is re-generated, storing it into:", MOVIELENS_DATA_FILE_NAME, "\n")
-    save(dat, file = MOVIELENS_DATA_FILE_NAME)
+    save(ml_data, file = MOVIELENS_DATA_FILE_NAME)
   } else {
     cat("The data is stored in", MOVIELENS_DATA_FILE_NAME, "and will be loaded\n")
-    dat <- load(MOVIELENS_DATA_FILE_NAME)
+    ml_data <- load(MOVIELENS_DATA_FILE_NAME)
   }
-  dat
+  return(ml_data)
 }
 
 #--------------------------------------------------------------------
 # This function creates the initial report to be filled
 #--------------------------------------------------------------------
-init_report_data <- function() {
-  tibble(
-    name = MOVIELENS_DATA_SET_NAME,
-    site_url = MOVIELENS_DATA_SET_SITE_URL,
-    data_file_url = MOVIELENS_DATA_SET_FILE_URL,
+init_report_data <- function(movielens_data) {
+  return(tibble(
+    data_set_name = MOVIELENS_DATA_SET_NAME,
+    data_set_site_url = MOVIELENS_DATA_SET_SITE_URL,
+    data_set_file_url = MOVIELENS_DATA_SET_FILE_URL,
     valid_set_prop = VALIDATION_SET_PROPORTION,
     exd = data.frame(
-      num_events = nrow(dat$edx),
-      num_predictors = ncol(dat$edx),
-      num_movies = length(unique(edx$movieId)),
-      num_users = length(unique(edx$userId))
+      num_events = nrow(movielens_data$edx),
+      num_predictors = ncol(movielens_data$edx),
+      num_movies = length(unique(movielens_data$edx$movieId)),
+      num_users = length(unique(movielens_data$edx$userId)),
+      num_na_rating = sum(is.na(movielens_data$edx$rating)),
+      num_na_timestamp = sum(is.na(movielens_data$edx$timestamp)),
+      num_na_title = sum(is.na(movielens_data$edx$title)),
+      num_na_genres = sum(is.na(movielens_data$edx$genres))
     ),
     validation = data.frame(
-      num_events = nrow(dat$validation),
-      num_predictors = ncol(dat$validation)
+      num_events = nrow(movielens_data$validation),
+      num_predictors = ncol(movielens_data$validation),
+      num_na_rating = sum(is.na(movielens_data$validation$rating)),
+      num_na_timestamp = sum(is.na(movielens_data$validation$timestamp)),
+      num_na_title = sum(is.na(movielens_data$validation$title)),
+      num_na_genres = sum(is.na(movielens_data$validation$genres))
     ) 
-  )
+  ))
 }
 
 #--------------------------------------------------------------------
@@ -172,9 +182,19 @@ init_report_data <- function() {
 #     MOVIELENS_REPORT_DATA_FILE_NAME
 # file to be used later from the movielens_report.Rmd script
 #--------------------------------------------------------------------
-
 store_report_data <- function(report_data) {
   save(report_data, file = MOVIELENS_REPORT_DATA_FILE_NAME)
+}
+
+#--------------------------------------------------------------------
+# This function computes the Root Mean Square Error (RMSE) that is
+# the standard deviation of the residuals (prediction errors). 
+# The two arguments are the predicted and the actual values to
+# be used in RMSE computations. The order of the arguments is not
+# imprortant.
+#--------------------------------------------------------------------
+RMSE <- function(x, y) {
+  return(sqrt(mean((x - y)^2)))
 }
 
 ####################################################################
@@ -183,12 +203,15 @@ store_report_data <- function(report_data) {
 # main sequence
 ####################################################################
 
-#Load the movielens data
+#01 - Load the movielens data
 movielens_data <- get_movielens_data()
 
-#Initialize the report data frame thay will be storing all
-#the required information for the report to be generated
-report_data <- init_report_data()
+#02 - Initialize the report data frame thay will be storing all
+#     the required information for the report to be generated
+report_data <- init_report_data(movielens_data)
 
-#Store the report into the file to be used from the movielens_report.Rmd
+#00 - Evaluate the model on the validation set and compute the RMSE
+
+#00 - Store the report into the file to be used from the movielens_report.Rmd
 store_report_data(report_data)
+
