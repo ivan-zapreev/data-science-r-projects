@@ -7,6 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
 load("movielens_report.rda")
 ```
 
@@ -17,11 +18,53 @@ load("movielens_report.rda")
 ## Introduction
 <!--an introduction/overview/executive summary section that describes the dataset and summarizes the goal of the project and key steps that were performed-->
 
-Recommendation systems are widely used in commercial application to provide targeted commercials or suggest online content, and etc. For example, one can think of *Spotify* suggesting new songs or *Youtube* proposing **"Recommended"** videos. The main goal of a recomendation system is to, as accurately as possible, predict the client's preferences, based on the available user data.
+Recommendation systems are widely used in commercial application to provide targeted commercials or suggest online content. In the latter, one can think of *Spotify* suggesting songs or *Youtube* proposing videos. The main goal of a recommendation system is to accurately predict client's preferences, based on available data on the previous user behavior. Note that, such data includes the bahaviour of all the clients.
 
-In this study we attempt to build a movie recomendation system based on the `r report_data$data_set_name` available via the [this link](`r report_data$data_set_site_url`). For this we shall use the techniques given within the *HarvardX: PH125.8x Data Science: Machine Learning* course and other courses which are part of the HarvardX *Data Science Professional* certification program.
+The goal of this work is to build a movie recommendation system based on the `r report_data$data_set_name` available from [`r report_data$data_set_site_url`](`r report_data$data_set_site_url`). To reach our goal we will use supervised machine learning techniques studied within the *"PH125.8x Data Science: Machine Learning"* course (a part of the broader HarvardX *Data Science Professional* certification program). The recommendation system will be therefore based on (linear) statistical models trained on the subset of the `r report_data$data_set_name`.
+
+The rest of the document is organized as follows. The *"Analysis"* section explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach. The *"Results"* presents the modeling results and discusses the model performance. The *"Conclusions"* section gives a brief summary of the report, its limitations and future work.
+
+The remainder of this section first present the data set, then defines the goal of this project more concretely, and finally identifies the main steps that have been taken to reach the goal.
 
 ### Dataset overview
+As stated in the [README](http://files.grouplens.org/datasets/movielens/ml-10m-README.html) of the original `r report_data$data_set_name`, it contains `10000054` ratings and `95580` tags (not used in this study) applied to `10681` movies by `71567` users of the [MovieLens](http://www.movielens.org/) service. 
+
+All ratings are contained in the file `ml-10M100K/ratings.dat`. Each line of this file represents one rating specified by the rating value (`rating`), the movie identifier (`movieId`), the identifier of the user (`userId`) and the submission timestamp (`timestamp`). Ratings are made on a `5`-star scale, with half-star increments. Timestamps represent seconds since midnight *Coordinated Universal Time (UTC) of January 1, 1970*. 
+
+Movie information is contained in the file `ml-10M100K/movies.dat`. Each line of this file represents one movie specified by its identifier (`movieId`), movie title (`title`) and the corresponding genres (`genres`). The movie titles are entered manually, so errors and inconsistencies may exist. Genres are pipe-separated lists, of the individual genres from the following set:
+
+  `("Action", "Adventure", "Animation", "Children's", "Comedy", "Crime", "Documentary", "Drama", "Fantasy", "Film-Noir", "Horror", "Musical", "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western")`.
+
+In this project, we use a pre-processed subset of the original dataset, using only the data from the `ratings.dat` and `movies.dat` files thereof. To facilitate supervised learning, the data is pre-processed in the following way:
+
+1. The `ratings.dat` and `movies.dat` are loaded into `ratings` and `movies` data frames
+    1. `ratings` -- with columns named `r c("userId", "movieId", "rating", "timestamp")`
+    2. `movies` -- columns named `r c("movieId", "title", "genres")`
+2. The ratings are coupled with the movies information by the `movieId` into a new `movielens` data frame
+3. The `movielens` data frame is randomly split into two parts:
+    2. `edx` -- a training set storing the `90%` of the observations from the `movielens`
+    1. `validation` -- a testing set storing the `10%` of the observations from the `movielens`
+4. The `validation` set is filtered to only contain movies ans users present in `edx`
+5. The observations filtered out in the previous step are added back to the `edx` set
+
+For more details, see the `create_movielens_sets` function located in the `movielens_project.R` script. As a result of pre-processing we have two sets with the following metrics, the training set `edx`:
+
+```{r, echo=F}
+as_tibble(report_data$edx)
+```
+
+and the testing set `validation`:
+
+```{r, echo=F}
+as_tibble(report_data$validation)
+```
+
+```{r, echo=F}
+percent_obs_edx <- round(report_data$edx$num_observations/(report_data$edx$num_observations+report_data$validation$num_observations)*100)
+```
+As one can see the `edx` set stores `r percent_obs_edx`% of the total number of observations (`num_observations`) and the `validation` set contains `r 100-percent_obs_edx`%. The difference in the numer of distinct movies (`num_movies`) and the number of distinct users (`num_users`) is explained by the observations being moved back from `validation` to `edx` in the last data preprocessing step, described above. Also note that the number of predictors (`num_predictors`) is equal to `r report_data$validation$num_predictors` as all of the provided column data (`r report_data$predictors`) can be used when building the prediction model.
+
+### Project goal
 
 ### Executive summary
 
@@ -31,5 +74,5 @@ In this study we attempt to build a movie recomendation system based on the `r r
 ## Results
 <!--a results section that presents the modeling results and discusses the model performance-->
 
-## Cnoclusions
+## Conclusions
 <!--a conclusion section that gives a brief summary of the report, its limitations and future work (the last two are recommended but not necessary)-->

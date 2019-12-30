@@ -14,7 +14,7 @@ if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.
 MOVIELENS_DATA_SET_NAME <- "MovieLens 10M dataset"
 MOVIELENS_DATA_SET_SITE_URL <- "https://grouplens.org/datasets/movielens/10m/"
 MOVIELENS_DATA_SET_FILE_URL <- "http://files.grouplens.org/datasets/movielens/ml-10m.zip"
-MOVIELENS_DATA_FILE_NAME <- "movielens_initial.rda"
+MOVIELENS_DATA_FILE_NAME <- "movielens_data.rda"
 RATINGS_DAT_FILE_NAME <- "ml-10M100K/ratings.dat"
 MOVIES_DAT_FILE_NAME <- "ml-10M100K/movies.dat"
 VALIDATION_SET_PROPORTION <- 0.1
@@ -25,10 +25,10 @@ MOVIELENS_REPORT_DATA_FILE_NAME <- "movielens_report.rda"
 ####################################################################
 
 #--------------------------------------------------------------------
-#This is a helper function which allows to remove the objects from the
-#environment in case they are present. This function is obtained from
-#the internet: 
-# https://stackoverflow.com/questions/7172568/write-a-function-to-remove-object-if-it-exists
+# This is a helper function which allows to remove the objects from the
+# environment in case they are present. This function is obtained from
+# the internet: 
+#     https://stackoverflow.com/questions/7172568/write-a-function-to-remove-object-if-it-exists
 #--------------------------------------------------------------------
 ifrm <- function(obj, env = globalenv()) {
   obj <- deparse(substitute(obj))
@@ -136,43 +136,38 @@ get_movielens_data <- function() {
   cat("Checkin if the Movielens data is stored in:", MOVIELENS_DATA_FILE_NAME,"\n")
   if(!file.exists(MOVIELENS_DATA_FILE_NAME)){
     cat("The data is not stored in", MOVIELENS_DATA_FILE_NAME, "start re-generating\n")
-    ml_data <- create_movielens_sets()
+    movielens_data <- create_movielens_sets()
     
     cat("The data is re-generated, storing it into:", MOVIELENS_DATA_FILE_NAME, "\n")
-    save(ml_data, file = MOVIELENS_DATA_FILE_NAME)
+    save(movielens_data, file = MOVIELENS_DATA_FILE_NAME)
   } else {
     cat("The data is stored in", MOVIELENS_DATA_FILE_NAME, "and will be loaded\n")
-    ml_data <- load(MOVIELENS_DATA_FILE_NAME)
+    load(MOVIELENS_DATA_FILE_NAME)
   }
-  return(ml_data)
+  return(movielens_data)
 }
 
 #--------------------------------------------------------------------
 # This function creates the initial report to be filled
 #--------------------------------------------------------------------
 init_report_data <- function(movielens_data) {
-  return(tibble(
+  return(list(
     data_set_name = MOVIELENS_DATA_SET_NAME,
     data_set_site_url = MOVIELENS_DATA_SET_SITE_URL,
     data_set_file_url = MOVIELENS_DATA_SET_FILE_URL,
     valid_set_prop = VALIDATION_SET_PROPORTION,
-    exd = data.frame(
-      num_events = nrow(movielens_data$edx),
+    predictors = names(movielens_data$edx),
+    edx = data.frame(
+      num_observations = nrow(movielens_data$edx),
       num_predictors = ncol(movielens_data$edx),
       num_movies = length(unique(movielens_data$edx$movieId)),
-      num_users = length(unique(movielens_data$edx$userId)),
-      num_na_rating = sum(is.na(movielens_data$edx$rating)),
-      num_na_timestamp = sum(is.na(movielens_data$edx$timestamp)),
-      num_na_title = sum(is.na(movielens_data$edx$title)),
-      num_na_genres = sum(is.na(movielens_data$edx$genres))
+      num_users = length(unique(movielens_data$edx$userId))
     ),
     validation = data.frame(
-      num_events = nrow(movielens_data$validation),
+      num_observations = nrow(movielens_data$validation),
       num_predictors = ncol(movielens_data$validation),
-      num_na_rating = sum(is.na(movielens_data$validation$rating)),
-      num_na_timestamp = sum(is.na(movielens_data$validation$timestamp)),
-      num_na_title = sum(is.na(movielens_data$validation$title)),
-      num_na_genres = sum(is.na(movielens_data$validation$genres))
+      num_movies = length(unique(movielens_data$validation$movieId)),
+      num_users = length(unique(movielens_data$v$userId))
     ) 
   ))
 }
