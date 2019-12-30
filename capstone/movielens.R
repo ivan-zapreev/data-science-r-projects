@@ -56,3 +56,7 @@ edx <- rbind(edx, removed)
 
 rm(dl, ratings, movies, test_index, temp, movielens, removed)
 
+#----------------------------------------------------------------
+#Quiz: MovieLens Dataset
+
+
