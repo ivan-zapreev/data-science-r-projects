@@ -1,0 +1,23 @@
+---
+title: "Report on Movielens"
+author: "Dr. Ivan S. Zapreev"
+date: "`r format(Sys.Date())`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+report_data <- load("movielens_report.dat")
+```
+
+## Introduction
+<!--an introduction/overview/executive summary section that describes the dataset and summarizes the goal of the project and key steps that were performed-->
+
+## Analysis
+<!--a methods/analysis section that explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach-->
+
+## Results
+<!--a results section that presents the modeling results and discusses the model performance-->
+
+## Cnoclusions
+<!--a conclusion section that gives a brief summary of the report, its limitations and future work (the last two are recommended but not necessary)-->
