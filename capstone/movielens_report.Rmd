@@ -158,6 +158,8 @@ movielens_data$edx %>%
 The rating scores may also depend on the time when the rating was given
 
 ```{r}
+#Convert the timestamp into a week (date) and then plot 
+#the mean rating for all the movies per week
 movielens_data$edx %>%
   mutate(date = as_datetime(timestamp), week = round_date(date, "week")) %>%
   group_by(week) %>%
@@ -169,9 +171,7 @@ movielens_data$edx %>%
 
 ### Project goal
 
-
-
-### Executive summary
+### Execution plan
 
 ## Analysis
 <!--a methods/analysis section that explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach-->
