@@ -213,7 +213,8 @@ As we see from the plot above, there is more variability in the movies with fewe
 #Plot the movies
 avg_movie_ratings %>%
   ggplot(aes(x = num_ratings, y = avg_rating)) +
-  geom_point(aes(color = I("black")), alpha=0.2) + geom_smooth()
+  geom_point(aes(color = I("black")), alpha=0.2) +
+  geom_smooth()
 ```
 
 ### Project goal
