@@ -7,8 +7,15 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyr)
 library(tidyverse)
-load("movielens_report.rda")
+library(lubridate)
+
+MOVIELENS_DATA_FILE_NAME <- "movielens_data.rda"
+MOVIELENS_REPORT_FILE_NAME <- "movielens_report.rda"
+
+load(MOVIELENS_DATA_FILE_NAME)
+load(MOVIELENS_REPORT_FILE_NAME)
 ```
 
 *[According to Wikipedia](https://en.wikipedia.org/wiki/Recommender_system):*
@@ -20,14 +27,14 @@ load("movielens_report.rda")
 
 Recommendation systems are widely used in commercial application to provide targeted commercials or suggest online content. In the latter, one can think of *Spotify* suggesting songs or *Youtube* proposing videos. The main goal of a recommendation system is to accurately predict client's preferences, based on available data on the previous user behavior. Note that, such data includes the bahaviour of all the clients.
 
-The goal of this work is to build a movie recommendation system based on the `r report_data$data_set_name` available from [`r report_data$data_set_site_url`](`r report_data$data_set_site_url`). To reach our goal we will use supervised machine learning techniques studied within the *"PH125.8x Data Science: Machine Learning"* course (a part of the broader HarvardX *Data Science Professional* certification program). The recommendation system will be therefore based on (linear) statistical models trained on the subset of the `r report_data$data_set_name`.
+The goal of this work is to build a movie recommendation system based on the `r movielens_report$data_set_name` available from [`r movielens_report$data_set_site_url`](`r movielens_report$data_set_site_url`). To reach our goal we will use supervised machine learning techniques studied within the *"PH125.8x Data Science: Machine Learning"* course (a part of the broader HarvardX *Data Science Professional* certification program). The recommendation system will be therefore based on (linear) statistical models trained on the subset of the `r movielens_report$data_set_name`.
 
 The rest of the document is organized as follows. The *"Analysis"* section explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach. The *"Results"* presents the modeling results and discusses the model performance. The *"Conclusions"* section gives a brief summary of the report, its limitations and future work.
 
-The remainder of this section first present the data set, then defines the goal of this project more concretely, and finally identifies the main steps that have been taken to reach the goal.
+The remainder of this section first present the data set, next analyze the dataset properties, then defines the goal of this project more concretely, and finally identifies the main steps that have been taken to reach the goal.
 
 ### Dataset overview
-As stated in the [README](http://files.grouplens.org/datasets/movielens/ml-10m-README.html) of the original `r report_data$data_set_name`, it contains `10000054` ratings and `95580` tags (not used in this study) applied to `10681` movies by `71567` users of the [MovieLens](http://www.movielens.org/) service. 
+As stated in the [README](http://files.grouplens.org/datasets/movielens/ml-10m-README.html) of the original `r movielens_report$data_set_name`, it contains `10000054` ratings and `95580` tags (not used in this study) applied to `10681` movies by `71567` users of the [MovieLens](http://www.movielens.org/) service. 
 
 All ratings are contained in the file `ml-10M100K/ratings.dat`. Each line of this file represents one rating specified by the rating value (`rating`), the movie identifier (`movieId`), the identifier of the user (`userId`) and the submission timestamp (`timestamp`). Ratings are made on a `5`-star scale, with half-star increments. Timestamps represent seconds since midnight *Coordinated Universal Time (UTC) of January 1, 1970*. 
 
@@ -50,21 +57,119 @@ In this project, we use a pre-processed subset of the original dataset, using on
 For more details, see the `create_movielens_sets` function located in the `movielens_project.R` script. As a result of pre-processing we have two sets with the following metrics, the training set `edx`:
 
 ```{r, echo=F}
-as_tibble(report_data$edx)
+as_tibble(movielens_report$edx)
 ```
 
 and the testing set `validation`:
 
 ```{r, echo=F}
-as_tibble(report_data$validation)
+as_tibble(movielens_report$validation)
 ```
 
 ```{r, echo=F}
-percent_obs_edx <- round(report_data$edx$num_observations/(report_data$edx$num_observations+report_data$validation$num_observations)*100)
+percent_obs_edx <- round(movielens_report$edx$num_observations/(movielens_report$edx$num_observations+movielens_report$validation$num_observations)*100)
 ```
-As one can see the `edx` set stores `r percent_obs_edx`% of the total number of observations (`num_observations`) and the `validation` set contains `r 100-percent_obs_edx`%. The difference in the numer of distinct movies (`num_movies`) and the number of distinct users (`num_users`) is explained by the observations being moved back from `validation` to `edx` in the last data preprocessing step, described above. Also note that the number of predictors (`num_predictors`) is equal to `r report_data$validation$num_predictors` as all of the provided column data (`r report_data$predictors`) can be used when building the prediction model.
+As one can see the `edx` set stores `r percent_obs_edx`% of the total number of observations (`num_observations`) and the `validation` set contains `r 100-percent_obs_edx`%. The difference in the numer of distinct movies (`num_movies`) and the number of distinct users (`num_users`) is explained by the observations being moved back from `validation` to `edx` in the last data preprocessing step, described above.
+
+### Dataset analysis
+
+Note that, from the number of distinct user, movies and observations (ratings) in the `edx` set it is clear that not every user has rated every movie as `r movielens_report$edx$num_users` \* `r movielens_report$edx$num_movies` < `r movielens_report$edx$num_observations`. The same can be seen via the next plot for randomly sampled 100 unique users and 100 unique movies:
+
+```{r, echo=F}
+#Sample 100 individual movie ids
+movie_ids <- unique(movielens_data$edx$movieId)
+sample_movie_ids <- sample(movie_ids, 100)
+
+#Plot the sparse matrix
+movielens_data$edx %>%
+  filter(movieId %in% sample_movie_ids) %>% 
+  select(userId, movieId, rating) %>%
+  mutate(rating = 100) %>%
+  spread(userId, rating) %>%
+  select(sample(ncol(.), 100)) %>% #Here we sample a 100 individual user ids
+  as.matrix() %>%
+  t(.) %>%
+  image(1:100, 1:100, . , xlab="Users", ylab="Movies")
+abline(h=0:100+0.5, v=0:100+0.5, col = "grey")
+```
+
+So the the task of a recommendation system we are to build can be seen as filling in the missing ratings.
+The complexity of this task is also induced by is not limited by the following factors:
+
+Some movies are rated more often than the others
+
+```{r}
+movielens_data$edx %>% 
+  count(movieId) %>% 
+  ggplot(aes(n)) + 
+  geom_histogram(bins = 30, color = "black") + 
+  scale_x_log10() + 
+  ggtitle("Movie rating counts")
+```
+
+Some users are more active in rating that the others
+
+```{r}
+movielens_data$edx %>%
+  count(userId) %>% 
+  ggplot(aes(n)) + 
+  geom_histogram(bins = 30, color = "black") + 
+  scale_x_log10() +
+  ggtitle("Users rating counts")
+```
+
+Each movie may duffer from another movie in its ratings
+
+```{r}
+#Sample 10 individual movie ids
+movie_ids <- unique(movielens_data$edx$movieId)
+set.seed(1)
+sample_movie_ids <- sample(movie_ids, 10)
+
+#Use the boxplot to show variations in ratings between different movies
+movielens_data$edx %>% 
+  filter(movieId %in% sample_movie_ids) %>% 
+  ggplot(aes(title, rating, group=movieId)) +
+  geom_boxplot() +
+  scale_x_discrete(labels = paste("movieId ",as.character(sample_movie_ids)))+
+  theme(axis.text.x = element_text(angle = 90)) + 
+  labs(x = "Selected movies")
+```
+
+Each user can be more or less inclined to give hing of low grades
+
+```{r}
+#Sample 10 individual user ids
+user_ids <- unique(movielens_data$edx$userId)
+set.seed(9)
+sample_user_ids <- sample(user_ids, 10)
+
+#Use the boxplot to show variations in ratings between different users
+movielens_data$edx %>% 
+  filter(userId %in% sample_user_ids) %>% 
+  mutate(userName = paste("userId ", as.character(userId))) %>%
+  group_by(userId) %>%
+  ggplot(aes(userName, rating, group=userId)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(x = "Selected users")
+```
+
+The rating scores may also depend on the time when the rating was given
+
+```{r}
+movielens_data$edx %>%
+  mutate(date = as_datetime(timestamp), week = round_date(date, "week")) %>%
+  group_by(week) %>%
+  summarize(avg_rating = mean(rating)) %>%
+  ggplot(aes(week, avg_rating)) +
+  geom_line() +
+  geom_smooth(method = 'loess')
+```
 
 ### Project goal
+
+
 
 ### Executive summary
 

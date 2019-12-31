@@ -14,10 +14,10 @@ if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.
 MOVIELENS_DATA_SET_NAME <- "MovieLens 10M dataset"
 MOVIELENS_DATA_SET_SITE_URL <- "https://grouplens.org/datasets/movielens/10m/"
 MOVIELENS_DATA_SET_FILE_URL <- "http://files.grouplens.org/datasets/movielens/ml-10m.zip"
-MOVIELENS_DATA_FILE_NAME <- "movielens_data.rda"
 RATINGS_DAT_FILE_NAME <- "ml-10M100K/ratings.dat"
 MOVIES_DAT_FILE_NAME <- "ml-10M100K/movies.dat"
 VALIDATION_SET_PROPORTION <- 0.1
+MOVIELENS_DATA_FILE_NAME <- "movielens_data.rda"
 MOVIELENS_REPORT_DATA_FILE_NAME <- "movielens_report.rda"
 
 ####################################################################
@@ -156,16 +156,13 @@ init_report_data <- function(movielens_data) {
     data_set_site_url = MOVIELENS_DATA_SET_SITE_URL,
     data_set_file_url = MOVIELENS_DATA_SET_FILE_URL,
     valid_set_prop = VALIDATION_SET_PROPORTION,
-    predictors = names(movielens_data$edx),
     edx = data.frame(
       num_observations = nrow(movielens_data$edx),
-      num_predictors = ncol(movielens_data$edx),
       num_movies = length(unique(movielens_data$edx$movieId)),
       num_users = length(unique(movielens_data$edx$userId))
     ),
     validation = data.frame(
       num_observations = nrow(movielens_data$validation),
-      num_predictors = ncol(movielens_data$validation),
       num_movies = length(unique(movielens_data$validation$movieId)),
       num_users = length(unique(movielens_data$v$userId))
     ) 
@@ -177,8 +174,8 @@ init_report_data <- function(movielens_data) {
 #     MOVIELENS_REPORT_DATA_FILE_NAME
 # file to be used later from the movielens_report.Rmd script
 #--------------------------------------------------------------------
-store_report_data <- function(report_data) {
-  save(report_data, file = MOVIELENS_REPORT_DATA_FILE_NAME)
+store_report_data <- function(movielens_report) {
+  save(movielens_report, file = MOVIELENS_REPORT_DATA_FILE_NAME)
 }
 
 #--------------------------------------------------------------------
@@ -203,10 +200,10 @@ movielens_data <- get_movielens_data()
 
 #02 - Initialize the report data frame thay will be storing all
 #     the required information for the report to be generated
-report_data <- init_report_data(movielens_data)
+movielens_report <- init_report_data(movielens_data)
 
 #00 - Evaluate the model on the validation set and compute the RMSE
 
 #00 - Store the report into the file to be used from the movielens_report.Rmd
-store_report_data(report_data)
+store_report_data(movielens_report)
 
