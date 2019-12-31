@@ -73,7 +73,7 @@ As one can see the `edx` set stores `r percent_obs_edx`% of the total number of 
 
 ### Dataset analysis
 
-Note that, from the number of distinct user, movies and observations (ratings) in the `edx` set it is clear that not every user has rated every movie as `r movielens_report$edx$num_users` \* `r movielens_report$edx$num_movies` < `r movielens_report$edx$num_observations`. The same can be seen via the next plot for randomly sampled 100 unique users and 100 unique movies:
+Note that, from the number of distinct user, movies and observations (ratings) in the `edx` set it is clear that not every user has rated every movie as `r movielens_report$edx$num_users` \* `r movielens_report$edx$num_movies` < `r movielens_report$edx$num_observations`. The same can be seen via the next plot for randomly sampled `100` unique users and `100` unique movies:
 
 ```{r, echo=F}
 #Sample 100 individual movie ids
@@ -93,10 +93,10 @@ movielens_data$edx %>%
 abline(h=0:100+0.5, v=0:100+0.5, col = "grey")
 ```
 
-So the the task of a recommendation system we are to build can be seen as filling in the missing ratings.
-The complexity of this task is also induced by is not limited by the following factors:
+The the task of a recommendation system we are to build can be seen as filling in the missing ratings.
+To stress the complexity of the undertaking, below we list a number of different circumstances that can influence rating predictions, and may need to be taken into account when building the statistical model.
 
-Some movies are rated more often than the others
+**(I)** Some movies are rated more often than the others:
 
 ```{r}
 movielens_data$edx %>% 
@@ -107,7 +107,7 @@ movielens_data$edx %>%
   ggtitle("Movie rating counts")
 ```
 
-Some users are more active in rating that the others
+**(II)** Some users are more active in rating that the others:
 
 ```{r}
 movielens_data$edx %>%
@@ -118,11 +118,13 @@ movielens_data$edx %>%
   ggtitle("Users rating counts")
 ```
 
-Each movie may duffer from another movie in its ratings
+**(III)** Movies differ from eachother in given ratings, lets consider `10` movies with at least `100` ratings each:
 
 ```{r}
-#Sample 10 individual movie ids
-movie_ids <- unique(movielens_data$edx$movieId)
+#Sample 10 individual movie ids for the movies with more than 100 ratings
+movie_ids <- movielens_data$edx %>%
+  group_by(movieId) %>% summarise(cnt = n()) %>% 
+  filter(cnt > 100) %>% pull(movieId) %>% unique(.)
 set.seed(1)
 sample_movie_ids <- sample(movie_ids, 10)
 
@@ -132,16 +134,18 @@ movielens_data$edx %>%
   ggplot(aes(title, rating, group=movieId)) +
   geom_boxplot() +
   scale_x_discrete(labels = paste("movieId ",as.character(sample_movie_ids)))+
-  theme(axis.text.x = element_text(angle = 90)) + 
+  theme(axis.text.x = element_text(angle = 20)) + 
   labs(x = "Selected movies")
 ```
 
-Each user can be more or less inclined to give hing of low grades
+**(IV)** Users differ from each other in giving ratings, lets consider `10` users with at least `100` ratings each:
 
 ```{r}
-#Sample 10 individual user ids
-user_ids <- unique(movielens_data$edx$userId)
-set.seed(9)
+#Sample 10 individual user ids for the users with more than 100 ratings
+user_ids <- movielens_data$edx %>%
+  group_by(userId) %>% summarise(cnt = n()) %>% 
+  filter(cnt > 100) %>% pull(userId) %>% unique(.)
+set.seed(1)
 sample_user_ids <- sample(user_ids, 10)
 
 #Use the boxplot to show variations in ratings between different users
@@ -151,11 +155,11 @@ movielens_data$edx %>%
   group_by(userId) %>%
   ggplot(aes(userName, rating, group=userId)) +
   geom_boxplot() +
-  theme(axis.text.x = element_text(angle = 90)) +
+  theme(axis.text.x = element_text(angle = 20)) +
   labs(x = "Selected users")
 ```
 
-The rating scores may also depend on the time when the rating was given
+**(V)** The rating scores depend on the time when the rating is given:
 
 ```{r}
 #Convert the timestamp into a week (date) and then plot 
@@ -167,6 +171,48 @@ movielens_data$edx %>%
   ggplot(aes(week, avg_rating)) +
   geom_line() +
   geom_smooth(method = 'loess')
+```
+
+```{r, echo=F}
+#Per movie, get the average movies score and rating counts
+avg_movie_ratings <- movielens_data$edx %>%
+  group_by(movieId) %>%
+  summarize(avg_rating = mean(rating),
+            num_ratings = n()) %>%
+  arrange(desc(avg_rating))
+```
+
+**(VI)** The best and the worst (on-average) movies were not rated very often:
+
+```{r}
+#Get the movies with the top 10 average scores
+true_top_10 <- avg_movie_ratings %>%
+  arrange(desc(avg_rating)) %>% 
+  slice(1:10)
+true_top_10
+
+#Get the movies with the bottom 10 average scores
+true_bottom_10 <- avg_movie_ratings %>%
+  arrange(avg_rating) %>% 
+  slice(1:10)
+true_bottom_10
+```
+
+See also the next plot where the best movies are marked as blue and the worst as red:
+```{r}
+#Plot the movies
+avg_movie_ratings %>%
+  ggplot(aes(x = num_ratings, y = avg_rating)) +
+  geom_point(aes(color = I("black"), alpha=0.01))+
+  geom_point(data = true_top_10, aes(num_ratings, avg_rating), color="blue") +
+  geom_point(data = true_bottom_10, aes(num_ratings, avg_rating), color="red")
+```
+As we see from the plot above there is more variability in the movies with fewer ratings but above that, the movies that are rated more often also seem to be on-average rated higher:
+```{r}
+#Plot the movies
+avg_movie_ratings %>%
+  ggplot(aes(x = num_ratings, y = avg_rating)) +
+  geom_point(aes(color = I("black"), alpha=0.01)) + geom_smooth()
 ```
 
 ### Project goal
