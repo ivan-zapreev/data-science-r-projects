@@ -185,8 +185,8 @@ store_report_data <- function(movielens_report) {
 # be used in RMSE computations. The order of the arguments is not
 # imprortant.
 #--------------------------------------------------------------------
-RMSE <- function(x, y) {
-  return(sqrt(mean((x - y)^2)))
+RMSE <- function(true_ratings, predicted_ratings) {
+  sqrt(mean((true_ratings - predicted_ratings)^2))
 }
 
 ####################################################################
@@ -202,8 +202,47 @@ movielens_data <- get_movielens_data()
 #     the required information for the report to be generated
 movielens_report <- init_report_data(movielens_data)
 
-#00 - Evaluate the model on the validation set and compute the RMSE
+#03 - Incrementally build and train the model
 
-#00 - Store the report into the file to be used from the movielens_report.Rmd
+train_set <- movielens_data$edx
+test_set <- movielens_data$edx
+
+lambdas <- seq(0, 2, 0.25)
+
+rmses <- sapply(lambdas, function(l){
+  
+  #Take the naive movie average
+  mu <- mean(train_set$rating)
+  
+  #Taking the penalized movie effects into account:
+  b_i <- train_set %>% 
+    group_by(movieId) %>%
+    summarize(b_i = sum(rating - mu)/(n()+l))
+  
+  #Takingthe penalized movie effects into account:
+  b_u <- train_set %>% 
+    left_join(b_i, by="movieId") %>%
+    group_by(userId) %>%
+    summarize(b_u = sum(rating - b_i - mu)/(n()+l))
+  
+  predicted_ratings <- 
+    test_set %>% 
+    left_join(b_i, by = "movieId") %>%
+    left_join(b_u, by = "userId") %>%
+    mutate(pred = mu + b_i + b_u) %>%
+    pull(pred)
+  
+  return(RMSE(predicted_ratings, test_set$rating))
+})
+
+qplot(lambdas, rmses)  
+
+lambda <- lambdas[which.min(rmses)]
+lambda
+min(rmses)
+
+#04 - Evaluate the model on the validation set and compute the RMSE
+
+#05 - Store the report into the file to be used from the movielens_report.Rmd
 store_report_data(movielens_report)
 

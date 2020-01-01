@@ -1,5 +1,5 @@
 ---
-title: "Movielens Recommendation System"
+title: "MovieLens Recommendation System"
 author: "Dr. Ivan S. Zapreev"
 date: "`r format(Sys.Date())`"
 output: pdf_document
@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyr)
 library(tidyverse)
 library(lubridate)
+library(graphics)
 
 MOVIELENS_DATA_FILE_NAME <- "movielens_data.rda"
 MOVIELENS_REPORT_FILE_NAME <- "movielens_report.rda"
@@ -22,18 +23,18 @@ load(MOVIELENS_REPORT_FILE_NAME)
 
 > A recommender system or a recommendation system (sometimes replacing 'system' with a synonym such as platform or engine) is a subclass of information filtering system that seeks to predict the "rating" or "preference" a user would give to an item.
 
-## Introduction
+# Introduction
 <!--an introduction/overview/executive summary section that describes the dataset and summarizes the goal of the project and key steps that were performed-->
 
-Recommendation systems are widely used in commercial application to provide targeted commercials or suggest online content. In the latter, one can think of *Spotify* suggesting songs or *Youtube* proposing videos. The main goal of a recommendation system is to accurately predict client's preferences, based on available data on the previous user behavior. Note that, such data includes the bahaviour of all the clients.
+Recommendation systems are widely used in commercial application to provide targeted commercials or suggest online content. In the latter, one can think of *Spotify* suggesting songs or *Youtube* proposing videos. The main goal of a recommendation system is to accurately predict client's preferences, based on available data on the previous user behavior. Note that, such data includes the behavior of all the clients.
 
 The goal of this work is to build a movie recommendation system based on the `r movielens_report$data_set_name` available from [`r movielens_report$data_set_site_url`](`r movielens_report$data_set_site_url`). To reach our goal we will use supervised machine learning techniques studied within the *"PH125.8x Data Science: Machine Learning"* course (a part of the broader HarvardX *Data Science Professional* certification program). The recommendation system will be therefore based on (linear) statistical models trained on the subset of the `r movielens_report$data_set_name`.
 
-The rest of the document is organized as follows. The *"Analysis"* section explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach. The *"Results"* presents the modeling results and discusses the model performance. The *"Conclusions"* section gives a brief summary of the report, its limitations and future work.
+The remainder of this section first present the data set, then defines the goal of this project more concretely, and finally identifies the main steps to be taken to reach the goal.
 
-The remainder of this section first present the data set, next analyze the dataset properties, then defines the goal of this project more concretely, and finally identifies the main steps that have been taken to reach the goal.
+## Dataset overview
+<!--This sub-section stores the references to the original data set and specified the sub-set thereof that is going to be worked with-->
 
-### Dataset overview
 As stated in the [README](http://files.grouplens.org/datasets/movielens/ml-10m-README.html) of the original `r movielens_report$data_set_name`, it contains `10000054` ratings and `95580` tags (not used in this study) applied to `10681` movies by `71567` users of the [MovieLens](http://www.movielens.org/) service. 
 
 All ratings are contained in the file `ml-10M100K/ratings.dat`. Each line of this file represents one rating specified by the rating value (`rating`), the movie identifier (`movieId`), the identifier of the user (`userId`) and the submission timestamp (`timestamp`). Ratings are made on a `5`-star scale, with half-star increments. Timestamps represent seconds since midnight *Coordinated Universal Time (UTC) of January 1, 1970*. 
@@ -41,17 +42,64 @@ All ratings are contained in the file `ml-10M100K/ratings.dat`. Each line of thi
 Movie information is contained in the file `ml-10M100K/movies.dat`. Each line of this file represents one movie specified by its identifier (`movieId`), movie title (`title`) and the corresponding genres (`genres`). The movie titles are entered manually, so errors and inconsistencies may exist. Genres are pipe-separated lists, of the individual genres from the following set:
 
   `("Action", "Adventure", "Animation", "Children's", "Comedy", "Crime", "Documentary", "Drama", "Fantasy", "Film-Noir", "Horror", "Musical", "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western")`.
+  
+Note that, the MovieLens data set is not used "as is" but is pre-processed. The pre-processing steps will be described and explained in the *"Data preparation"* section of this document.
 
-In this project, we use a pre-processed subset of the original dataset, using only the data from the `ratings.dat` and `movies.dat` files thereof. To facilitate supervised learning, the data is pre-processed in the following way:
+## Project goal
+The goal of the project is to build and train a statistical model predicting movie rating based on, at least, the user and the movie. The model is to be trained on the training set (`edx`) and is to be evaluation on a validation set (`validation`).[^1] 
+
+The evaluation of model will be done using the residual mean squared error (RMSE) which, similarly to a standard deviation, can be interpreted as: *the typical error we make when predicting a movie rating*. In other words, e.g, if this number is larger than `1`, it means our typical error is larger than one star.
+
+**Definition** *(RMSE)*
+
+Let $y_{u,i}$ be the rating for movie $i$ by user $u$ and $\hat{y}_{u,i}$ be our prediction for that rating, then: 
+
+\[
+  RMSE=\sqrt{\sum_{i=1}^{N}(y_{u,i}-\hat{y}_{u,i})^2}
+\]
+
+The definition above trivially translates into the following `R` function:
+
+```{r}
+RMSE <- function(true_ratings, predicted_ratings){
+    sqrt(mean((true_ratings - predicted_ratings)^2))
+  }
+```
+
+The ultimate goal of the project is to create a statistical model, solely based on the training set, that on the `validation` set will be able to predict the movie rating with $RMSE <= 0.8649$. The way we build such a model will be explained in the *"Modeling approach"* section of this document.
+
+[^1]: These sets are defined in the *"Data preparation"* section.
+
+## Execution plan
+
+Let us now briefly outline the main steps to be performed to reach the previously formalized project goal:
+
+1. **Prepare the data** -- see the *"Data preparation"* section:
+    + Select the relevant data; split into training and validation sets; and etc.
+2. **Analyze the dataset** -- see the *"Dataset analysis"* section:
+    + Perform data exploration and visualization; summarize insights on the data.
+3. **Describe the modeling approach** -- see the *"Modeling approach"* section:
+    + Consider the insights of the data analysis; suggest the way for building the prediction model.
+4. **Present modeling results** -- see the  *"Results"* section:
+    + Train the model on the test set; analyze the training results; evaluate on the validation set.
+5. **Provide concluding remarks** -- see the *"Conclusions"* section:
+    + Summarize the results; mention any approach limitations; outline possible future improvements.
+
+Please note that, the remainder of the document is structured according to the execution plan listed above.
+
+# Data preparation
+<!--This section explains how the original MovieLens data set is pre-processed, cleaned and split to get the training and validation sets for training and validation of the statistical model(s) to be build-->
+
+In this project, we use a pre-processed subset of the original dataset. Let us now explain how that subset obtained and pre-processed. Here we only use the data from the `ratings.dat` and `movies.dat` files from the `r movielens_report$data_set_name`. To facilitate supervised learning, the data is pre-processed and split into a training (`edx`) and testing (`validation`) sets. The former will be used for training statistical model(s) and the latter will be used for the model(s) validation. We pre-process and split the data in the following way:
 
 1. The `ratings.dat` and `movies.dat` are loaded into `ratings` and `movies` data frames
     1. `ratings` -- with columns named `r c("userId", "movieId", "rating", "timestamp")`
     2. `movies` -- columns named `r c("movieId", "title", "genres")`
 2. The ratings are coupled with the movies information by the `movieId` into a new `movielens` data frame
 3. The `movielens` data frame is randomly split into two parts:
-    2. `edx` -- a training set storing the `90%` of the observations from the `movielens`
-    1. `validation` -- a testing set storing the `10%` of the observations from the `movielens`
-4. The `validation` set is filtered to only contain movies ans users present in `edx`
+    2. `edx` -- a set storing the `90%` of the observations from the `movielens`, to be used for training
+    1. `validation` -- a set storing the `10%` of the observations from the `movielens`, to be used for validation
+4. The `validation` set is filtered to only contain movies and users present in `edx`
 5. The observations filtered out in the previous step are added back to the `edx` set
 
 For more details, see the `create_movielens_sets` function located in the `movielens_project.R` script. As a result of pre-processing we have two sets with the following metrics, the training set `edx`:
@@ -60,7 +108,7 @@ For more details, see the `create_movielens_sets` function located in the `movie
 as_tibble(movielens_report$edx)
 ```
 
-and the testing set `validation`:
+and the validation set `validation`:
 
 ```{r, echo=F}
 as_tibble(movielens_report$validation)
@@ -69,11 +117,16 @@ as_tibble(movielens_report$validation)
 ```{r, echo=F}
 percent_obs_edx <- round(movielens_report$edx$num_observations/(movielens_report$edx$num_observations+movielens_report$validation$num_observations)*100)
 ```
-As one can see the `edx` set stores `r percent_obs_edx`% of the total number of observations (`num_observations`) and the `validation` set contains `r 100-percent_obs_edx`%. The difference in the numer of distinct movies (`num_movies`) and the number of distinct users (`num_users`) is explained by the observations being moved back from `validation` to `edx` in the last data preprocessing step, described above.
+As one can see the `edx` set stores `r percent_obs_edx`% of the total number of observations (`num_observations`) and the `validation` set contains `r 100-percent_obs_edx`%. The difference in the number of distinct movies (`num_movies`) and the number of distinct users (`num_users`) is explained by the observations being moved back from `validation` to `edx` in the last data preprocessing step, described above.
 
-### Dataset analysis
+Given the training and validation set preparation procedure above we assume that the resulting sets follow the same probability distribution of the conditional probability of interest, see the section on the *"Modeling approach"*.
 
-Note that, from the number of distinct user, movies and observations (ratings) in the `edx` set it is clear that not every user has rated every movie as `r movielens_report$edx$num_users` \* `r movielens_report$edx$num_movies` < `r movielens_report$edx$num_observations`. The same can be seen via the next plot for randomly sampled `100` unique users and `100` unique movies:
+# Dataset analysis
+<!--In this section we analyze the training set, by means of data exploration and visualization, in order to get insights on the data and to highlight its features that could be further used in developing the prediction model-->
+
+In this sections we analyze the training (`edx`) subset of the original MovieLens data set only, as we assume that this is the only data available for building the prediction models. The motivation behind is that we want to avoid influencing the model validation results. This is done under a, not-verified, assumption that the the testing set, follows the same probability distribution of the conditional probability of interest as the validation set. In the *"Results"* section we may come back to this assumption in case the accuracy of the developed statistical model(s) on the validation set will turn out to be insufficient.
+
+From the number of distinct user, movies and observations (ratings) in the `edx` set it is clear that not every user has rated every movie as `r movielens_report$edx$num_users` \* `r movielens_report$edx$num_movies` < `r movielens_report$edx$num_observations`. The same can be seen via the next plot for randomly sampled `100` unique users and `100` unique movies:
 
 ```{r, echo=F}
 #Sample 100 individual movie ids
@@ -89,8 +142,9 @@ movielens_data$edx %>%
   select(sample(ncol(.), 100)) %>% #Here we sample a 100 individual user ids
   as.matrix() %>%
   t(.) %>%
-  image(1:100, 1:100, . , xlab="Users", ylab="Movies")
-abline(h=0:100+0.5, v=0:100+0.5, col = "grey")
+  image(1:100, 1:100, . , xlab="Users", ylab="Movies") %>%
+  abline(h=0:100+0.5, v=0:100+0.5, col = "grey") %>%
+  title(main = "Movie ratings sparsity")
 ```
 
 The the task of a recommendation system we are to build can be seen as filling in the missing ratings.
@@ -104,7 +158,9 @@ movielens_data$edx %>%
   ggplot(aes(n)) + 
   geom_histogram(bins = 30, color = "black") + 
   scale_x_log10() + 
-  ggtitle("Movie rating counts")
+  labs(x = "Number of ratings", y = "Number of movies") + 
+  ggtitle("Movie rating counts") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
 **(II)** Some users are more active in rating movies that the others:
@@ -115,10 +171,12 @@ movielens_data$edx %>%
   ggplot(aes(n)) + 
   geom_histogram(bins = 30, color = "black") + 
   scale_x_log10() +
-  ggtitle("Users rating counts")
+  labs(x = "Number of ratings", y = "Number of users") + 
+  ggtitle("User rating activity") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
-**(III)** Movies differ from eachother in given ratings, lets consider `10` movies with at least `100` ratings each:
+**(III)** Movies differ from each other in given ratings, lets consider `10` movies with at least `100` ratings each:
 
 ```{r}
 #Sample 10 individual movie ids for the movies with more than 100 ratings
@@ -128,14 +186,16 @@ movie_ids <- movielens_data$edx %>%
 set.seed(1)
 sample_movie_ids <- sample(movie_ids, 10)
 
-#Use the boxplot to show variations in ratings between different movies
+#Use the box plot to show variations in ratings between different movies
 movielens_data$edx %>% 
   filter(movieId %in% sample_movie_ids) %>% 
   ggplot(aes(title, rating, group=movieId)) +
   geom_boxplot() +
   scale_x_discrete(labels = paste("movieId ",as.character(sample_movie_ids)))+
   theme(axis.text.x = element_text(angle = 20)) + 
-  labs(x = "Selected movies")
+  labs(x = "Selected movies", y="Received ratings") + 
+  ggtitle("Movie effects") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
 **(IV)** Users differ from each other in giving ratings, lets consider `10` users with at least `100` ratings each:
@@ -145,7 +205,7 @@ movielens_data$edx %>%
 user_ids <- movielens_data$edx %>%
   group_by(userId) %>% summarise(cnt = n()) %>% 
   filter(cnt > 100) %>% pull(userId) %>% unique(.)
-set.seed(1)
+set.seed(5)
 sample_user_ids <- sample(user_ids, 10)
 
 #Use the boxplot to show variations in ratings between different users
@@ -156,7 +216,10 @@ movielens_data$edx %>%
   ggplot(aes(userName, rating, group=userId)) +
   geom_boxplot() +
   theme(axis.text.x = element_text(angle = 20)) +
-  labs(x = "Selected users")
+  labs(x = "Selected users", y= "Given ratings") + 
+  ggtitle("User effects") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"
+                                  ))
 ```
 
 **(V)** The rating scores depend on the time when the rating is given:
@@ -170,7 +233,10 @@ movielens_data$edx %>%
   summarize(avg_rating = mean(rating)) %>%
   ggplot(aes(week, avg_rating)) +
   geom_line() +
-  geom_smooth(method = 'loess')
+  geom_smooth(method = 'loess', method.args=list(degree=2)) +
+  labs(x="Week", y="Average rating") +
+  ggtitle("Global timing effects") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
 ```{r, echo=F}
@@ -205,7 +271,10 @@ avg_movie_ratings %>%
   ggplot(aes(x = num_ratings, y = avg_rating)) +
   geom_point(aes(color = I("black")), alpha=0.2)+
   geom_point(data = true_top_10, aes(num_ratings, avg_rating), color="blue") +
-  geom_point(data = true_bottom_10, aes(num_ratings, avg_rating), color="red")
+  geom_point(data = true_bottom_10, aes(num_ratings, avg_rating), color="red") +
+  labs(x="Number of movie ratings", y="Average movie rating") +
+  ggtitle("Best and worst movie effects") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
 As we see from the plot above, there is more variability in the movies with fewer ratings but above that, the movies that are rated more often also seem to be on-average rated higher:
@@ -214,18 +283,30 @@ As we see from the plot above, there is more variability in the movies with fewe
 avg_movie_ratings %>%
   ggplot(aes(x = num_ratings, y = avg_rating)) +
   geom_point(aes(color = I("black")), alpha=0.2) +
-  geom_smooth()
+  geom_smooth(method = 'loess', method.args=list(degree=2)) +
+  labs(x="Number of movie ratings", y="Average movie rating") +
+  ggtitle("Number of ratings effects") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
-### Project goal
+# Modeling approach
+<!--This section describes the modeling approach as based on the insights obtained in the previous section-->
 
-### Execution plan
+Principal Component Analsys (PCA) analysis is not very useful as the number of predictors is small.
+The standard models, such as linear model (lm) or the random trees/forest fail due to the huge data set size, the memory is eschausted. 
 
-## Analysis
-<!--a methods/analysis section that explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach-->
-
-## Results
+# Results
 <!--a results section that presents the modeling results and discusses the model performance-->
 
-## Conclusions
+# Conclusions
 <!--a conclusion section that gives a brief summary of the report, its limitations and future work (the last two are recommended but not necessary)-->
+
+**TODO: possible extensions** 
+
+* Account for genres effects
+* Account for timing effects
+* Check for distribution of the training and validation sets
+* Random trees and random forests
+* Some standard models
+* Cross validation on the training set
+* Model ensembles
