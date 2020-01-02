@@ -104,8 +104,8 @@ We pre-process and split the data in the following way:
     2. `movies` -- columns named `r c("movieId", "title", "genres")`
 2. The ratings are coupled with the movies information by the `movieId` into a new `movielens` data frame
 3. The `movielens` data frame is randomly split into two parts:
-    2. `edx` -- a set storing the `r (1-movielens_report$VALIDATION_TO_EDX_SET_RATIO)*100`% of the observations from the `movielens`, to be used for training
-    1. `validation` -- a set storing the `r movielens_report$VALIDATION_TO_EDX_SET_RATIO*100`% of the observations from the `movielens`, to be used for validation
+    2. `edx` -- a set storing the `r (1-movielens_report$VALIDATION_TO.EDX_SET_RATIO)*100`% of the observations from the `movielens`, to be used for training
+    1. `validation` -- a set storing the `r movielens_report$VALIDATION_TO.EDX_SET_RATIO*100`% of the observations from the `movielens`, to be used for validation
 4. The `validation` set is filtered to only contain movies and users present in `edx`
 5. The observations filtered out in the previous step are added back to the `edx` set
 
@@ -127,6 +127,8 @@ percent_obs_edx <- round(edx_set_info$num_observations/(edx_set_info$num_observa
 As one can see the `edx` set stores `r percent_obs_edx`% of the total number of observations (`num_observations`) and the `validation` set contains `r 100-percent_obs_edx`%. The difference in the number of distinct movies (`num_movies`) and the number of distinct users (`num_users`) is explained by the observations being moved back from `validation` to `edx` in the last data preprocessing step, described above.
 
 Given the training and validation set preparation procedure above we assume that the resulting sets follow the same probability distribution of the conditional probability of interest, see the section on the *"Modeling approach"*.
+
+At last, let us mention that the `edx` and `validation` set analysis revealed no `N/A` values are present and also there was no need detected to do any additional cleaning of the data.
 
 # Dataset analysis
 <!--In this section we analyze the training set, by means of data exploration and visualization, in order to get insights on the data and to highlight its features that could be further used in developing the prediction model-->
@@ -155,9 +157,9 @@ movielens_data$edx %>%
 ```
 
 The the task of a recommendation system we are to build can be seen as filling in the missing ratings.
-To stress the complexity of the undertaking, below we list a number of different circumstances that can influence rating predictions, and may need to be taken into account when building the statistical model.
+To stress the complexity of the undertaking, below we list a number of different observations that can influence rating predictions, and may need to be taken into account when building the statistical model.
 
-**(I)** Some movies are rated more often than the others:
+**(O.I):** Some movies are rated more often than the others:
 
 ```{r}
 movielens_data$edx %>% 
@@ -170,7 +172,7 @@ movielens_data$edx %>%
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
-**(II)** Some users are more active in rating movies that the others:
+**(O.II):** Some users are more active in rating movies that the others:
 
 ```{r}
 movielens_data$edx %>%
@@ -183,7 +185,7 @@ movielens_data$edx %>%
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
-**(III)** Movies differ from each other in given ratings, lets consider `10` movies with at least `100` ratings each:
+**(O.III):** Movies differ from each other in given ratings, lets consider `10` movies with at least `100` ratings each:
 
 ```{r}
 #Sample 10 individual movie ids for the movies with more than 100 ratings
@@ -205,7 +207,7 @@ movielens_data$edx %>%
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
-**(IV)** Users differ from each other in giving ratings, lets consider `10` users with at least `100` ratings each:
+**(O.IV):** Users differ from each other in giving ratings, lets consider `10` users with at least `100` ratings each:
 
 ```{r}
 #Sample 10 individual user ids for the users with more than 100 ratings
@@ -225,26 +227,10 @@ movielens_data$edx %>%
   theme(axis.text.x = element_text(angle = 20)) +
   labs(x = "Selected users", y= "Given ratings") + 
   ggtitle("User effects") +
-  theme(plot.title = element_text(hjust = 0.5, face="bold"
-                                  ))
-```
-
-**(V)** The rating scores depend on the time when the rating is given:
-
-```{r}
-#Convert the timestamp into a week (date) and then plot 
-#the mean rating for all the movies per week
-movielens_data$edx %>%
-  mutate(date = as_datetime(timestamp), week = round_date(date, "week")) %>%
-  group_by(week) %>%
-  summarize(avg_rating = mean(rating)) %>%
-  ggplot(aes(week, avg_rating)) +
-  geom_line() +
-  geom_smooth(method = 'loess', method.args=list(degree=2)) +
-  labs(x="Week", y="Average rating") +
-  ggtitle("Global timing effects") +
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
+
+**(O.V):** The best and the worst (on-average) movies were not rated very often:
 
 ```{r, echo=F}
 #Per movie, get the average movies score and rating counts
@@ -254,8 +240,6 @@ avg_movie_ratings <- movielens_data$edx %>%
             num_ratings = n()) %>%
   arrange(desc(avg_rating))
 ```
-
-**(VI)** The best and the worst (on-average) movies were not rated very often:
 
 ```{r}
 #Get the movies with the top 10 average scores
@@ -284,7 +268,26 @@ avg_movie_ratings %>%
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
-As we see from the plot above, there is more variability in the movies with fewer ratings but above that, the movies that are rated more often also seem to be on-average rated higher:
+**(O.VI):** The rating scores depend on the time when the rating is given:
+
+```{r}
+#Convert the timestamp into a week (date) and then plot 
+#the mean rating for all the movies per week
+movielens_data$edx %>%
+  mutate(date = as_datetime(timestamp), week = round_date(date, "weekId")) %>%
+  group_by(weekId) %>%
+  summarize(avg_rating = mean(rating)) %>%
+  ggplot(aes(weekId, avg_rating)) +
+  geom_line() +
+  geom_smooth(method = 'loess', method.args=list(degree=2)) +
+  labs(x="Week", y="Average rating") +
+  ggtitle("Global timing effects") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+```
+
+**(O.VII):** The ratings show dependency from the movie's popularity is rated:
+
+As we already see from the plot above, there is more variability for the movies with fewer ratings. Let us now consider the same plot with the smoothened average movie rating trend line:
 ```{r}
 #Plot the movies
 avg_movie_ratings %>%
@@ -292,15 +295,68 @@ avg_movie_ratings %>%
   geom_point(aes(color = I("black")), alpha=0.2) +
   geom_smooth(method = 'loess', method.args=list(degree=2)) +
   labs(x="Number of movie ratings", y="Average movie rating") +
-  ggtitle("Number of ratings effects") +
+  ggtitle("Movie popularity effects") +
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
+We can clearly see that the movies that are rated more often (we call them "popular" movies) are rated higher on-average.
+
+In addition we could consider the effects caused by the movie titles and genres. One could think of analyzing the influence of:
+
+* Keywords and phrases in the movie titles
+* Connection between sequels, prequels, and spin-offs
+* Movie genre and genre combinations
+
+Although possible and interesting, due to the lack of time, the latter will not be considered in this study.
 
 # Modeling approach
 <!--This section describes the modeling approach as based on the insights obtained in the previous section-->
 
-Principal Component Analsys (PCA) analysis is not very useful as the number of predictors is small.
-The standard models, such as linear model (lm) or the random trees/forest fail due to the huge data set size, the memory is eschausted. 
+Consider the columns of the available MovieLens data:
+```{r, echo=F}
+names(movielens_data$edx)
+```
+Then the conditional probability distribution that is to be estimates can be formalized as:
+\[
+Pr\left(R \; \vert \; M = m, \;U = u, \;T = t, \;G = g, \;L = l\right)
+\]
+Here the movie-related random variables are:
+
+* $R$ -- the rating to be given; 
+* $U$ -- the user id; 
+* $M$ -- the movie id; 
+* $T$ -- the ratings timestamp; 
+* $G$ -- the movie genres; 
+* $L$ -- the movie title; 
+
+So here we could use $5$ predictors do provide the estimates of $R$.
+
+As discussion in the end of the *"Dataset analysis"* section, we shall NOT consider the effects caused by the genres ($G$) and movie titles ($T$). This leaves us with three predictors $U$, $M$ and $T$ and the conditional probability distribution to be estimated:
+\[
+Pr\left(R \; \vert \; M = m, \;U = u, \;T = t\right)
+\]
+
+Before we proceed, let us note that the dimension reduction techniques, e.g. Principal Component Analysis (PCA), are not very useful here as the number of predictors is small, so they will not be used. Moreover, due to the large amount of data in the dataset, the standard available statistical models in $R$, such as the Linear Model (`lm`) or the random trees/forest models (`randomForest`), are not usable as they all fail with exhausting the available memory. This means that we are to build an efficient model for the recommendation system almost "from scratch".
+
+Let us now consider the data effects *(O.I)* -- *(O.VII)* outlined in the *"Dataset analysis"* section. The first *(O.I)* -- *(O.V)* effects are the same as observed on the subset of the MovieLens dataset included into the *dslabs* package. In fact this subset was already used for a "Recommendation system" case-study in the literature[^2] and that case study has suggested a statistical model taking into account the user and movie effects along with the Regularization to account *(O.V)*.
+
+Based on the above, we shall split our modeling approach into two parts:
+
+1. **Base model**: We take the statistical model of the movie recommendation system explained in the literature.
+2. **Timing model**: We extend the *Base model* taking into account the timing effects *(O.VI)*.
+
+Similar to the timing effects, we could also take the movie popularity effects *(O.VII)* into account. However, as the *"Results"* section will reveal, the *Timing model* will already have the RMSE score significantly below the desired $0.8649$ value, c.f. section *"Project goal"*. Therefore, the *(O.VII)* effect will not be taken into account and will be left for future work.
+
+Further, we shall first outline the **Base model*, as present in the literature. Next, we explain how we extended towards the *Timing model*, taking the timing effects with Regularization into account.
+
+**Note that:** We consider the *Timing model* to be the $\underline{\text{innovative part}}$ of this work, as it builds upon the existing *Base model*, and will be shown to improves the predictions.
+
+[^2]: Chapter $33.7$: *"Recommendation systems"* of the **"Introduction to Data Science"** [online book](https://rafalab.github.io/dsbook/) by Rafael A. Irizarry
+
+## Base model approach
+
+
+## Modeling timing effects
+
 
 # Results
 <!--a results section that presents the modeling results and discusses the model performance-->
@@ -310,8 +366,12 @@ The standard models, such as linear model (lm) or the random trees/forest fail d
 
 **TODO: possible extensions** 
 
+* Individual lambda tuning for regularized predictors
+* Account for popularity effects
 * Account for genres effects
-* Account for timing effects
+* Account for title effects (sequels, spin-offs, key words)
+
+???
 * Check for distribution of the training and validation sets
 * Random trees and random forests
 * Some standard models
