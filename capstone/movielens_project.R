@@ -20,7 +20,7 @@ VALIDATION_TO_EDX_SET_RATIO <- 0.1
 #Define the test versus train set ratio
 TEST_TO_TRAIN_SET_RATIO <- 0.2
 #Define a sequene of lambdas for regularization
-REGULARIZATION_LAMBDAS <- seq(0, 10, 0.25)
+REGULARIZATION_LAMBDAS <- seq(0, 7, 0.25)
 
 #--------------------------------------------------------------------
 # Define some constant parameters
@@ -97,7 +97,11 @@ create_movielens_sets <- function() {
   
   #Join the movies with the corresponding ratings data
   movielens <- left_join(ratings, movies, by = "movieId")
-
+  
+  #Extend the data set with the week
+  movielens <- movielens %>% 
+    mutate(weekId = round_date(as_datetime(timestamp), "week"))
+  
   #Before splitting the data set into the training and testing parts set the random seed  
   set.seed(1, sample.kind="Rounding")
   # if using R 3.5 or earlier, use `set.seed(1)` instead
@@ -205,8 +209,62 @@ RMSE <- function(true_ratings, predicted_ratings) {
 }
 
 #--------------------------------------------------------------------
+# This is the initialization function that allows to initialize the 
+# model structure with the training set average rating and also, if
+# requested, the LOESS model fit for the average movie rating per week
+# The function arguments are:
+#    train_set - the training set data
+#    is_time - the timing effects flag, if true then the LOESS fit
+#              for the average movie rating per week is computed
+# The function returns a list with two attribuites
+# one of which is optional:
+#    mu_hat - the average movie rating
+#    b_t_fit - the fitted LOES model for the average 
+#              movie rating per weeek
+#--------------------------------------------------------------------
+init_model <- function(train_set, is_time) {
+  #Copmute the overal movie average
+  mu_hat <- mean(train_set$rating)
+  
+  #Initialize the model with the mean rating
+  model <- list(mu_hat = mu_hat)
+  
+  #Check if we need to take the timing effects into account
+  if(is_time) {
+    #Compute the smooth Local Regression (LOESS) fit for
+    #the average movie rating per week, to be used to
+    #compute b_t (timing effect) parameters
+    b_t_fit <- train_set %>% 
+      group_by(weekId) %>%
+      summarise(avg_rating = mean(rating)) %>%
+      mutate(weekId = as.numeric(weekId)) %>%
+      loess(avg_rating ~ weekId, degree=2, data=.)
+    
+    #Extend the model with the LOESS fit model
+    model <- append(model, list(b_t_fit = b_t_fit))
+  }
+  
+  #Return the result
+  return(model)
+}
+
+#--------------------------------------------------------------------
+# This helper function accepts a model list and checks
+# if it has the "b_t_fit"" key. If it does then it returns 
+# TRUE and otherwise FALSE.
+#--------------------------------------------------------------------
+is_timing_effects <- function(model) {
+  return(sum(str_detect(names(model),"b_t_fit")) != 0)
+}
+
+#--------------------------------------------------------------------
 # This function trains the prediction model for the given training set
 # and the regularization lambda coefficient. It accepts the arguments:
+#    base_model - the basic model, initialized with:
+#        mu_hat - the average movie rating
+#        b_t_fit - the fitted model of the average movie rating per week
+#                  this parameter is optional and is only present if the
+#                  timing effects are to be taken into accoubt
 #    train_set - the training set
 #    lambda - the model regularization parameter
 # The model is based on  movie mean rating, movie effects accounted for
@@ -218,39 +276,86 @@ RMSE <- function(true_ratings, predicted_ratings) {
 #
 # For a movie m and the user u, the prediction model looks like:
 #    pred = mu_hat + b_m + b_u
+# without timing effects taken into account and
+#    pred = mu_hat + b_t + b_m + b_u
+# with the timing effects
 # where:
 #    mu_hat - is the estimated average movie rating
+#    b_t - the penalized via regularization with parameter lambda timing effect
 #    b_m - the penalized via regularization with parameter lambda movie effect
 #    b_u - the penalized via regularization with parameter lambda user effect
 #
 # The result of the function is a list with:
 #     mu_hat - the mean movie rating
+#     lambda - the regularization parameter value used
+#     b_t - the data frame with the weekIds and the corresponding b_t values
 #     b_m - the data frame with the movieIds and the corresponding b_m values
 #     b_u - the data frame with the userIds and the corresponding b_u values
 #--------------------------------------------------------------------
-prepare_model <- function(train_set, lambda) {
+prepare_model <- function(base_model, train_set, lambda) {
   #Copmute the overal movie average
-  mu_hat <- mean(train_set$rating)
+  mu_hat <- base_model$mu_hat
   
   cat("The mean movie rating for lambda", lambda, "is", mu_hat, "\n")
   
-  #Take the penalized movie effects into account:
-  b_ms <- train_set %>% 
-    group_by(movieId) %>%
-    summarize(b_m = sum(rating - mu_hat) /(n() + lambda)) %>%
-    select(movieId, b_m)
-  cat("The first 10 b_m values are:", b_ms$b_m[1:10], "\n")
+  #Check if the timing effects are needed
+  is_time = is_timing_effects(base_model)
+  if(is_time) {
+    b_t_fit <- base_model$b_t_fit
+    
+    #Compute the movie rating timing effects:
+    b_ts <- train_set %>% 
+      mutate(lp_t = predict(b_t_fit, as.numeric(weekId))) %>%
+      group_by(weekId) %>%
+      summarize(b_t = sum(lp_t - mu_hat) / (n() + lambda))
+    
+    #Compute the movie rating effects:
+    b_ms <- train_set %>% 
+      left_join(b_ts, by = "weekId") %>%
+      group_by(movieId) %>%
+      summarize(b_m = sum(rating - b_t - mu_hat) / (n() + lambda)) %>%
+      select(movieId, b_m)
+    
+    #Compute the user rating effects:
+    b_us <- train_set %>% 
+      left_join(b_ms, by = "movieId") %>%
+      left_join(b_ts, by = "weekId") %>%
+      group_by(userId) %>%
+      summarize(b_u = sum(rating - b_t - b_m - mu_hat) / (n() + lambda)) %>%
+      select(userId, b_u)
+  } else {
+    #Compute the movie rating effects:
+    b_ms <- train_set %>% 
+      group_by(movieId) %>%
+      summarize(b_m = sum(rating - mu_hat) / (n() + lambda)) %>%
+      select(movieId, b_m)
+
+    #Compute the user rating effects:
+    b_us <- train_set %>% 
+      left_join(b_ms, by = "movieId") %>%
+      group_by(userId) %>%
+      summarize(b_u = sum(rating - b_m - mu_hat) / (n() + lambda)) %>%
+      select(userId, b_u)
+  }
+
+  #Return the result
+  ext_model <- list(lambda = lambda, 
+                    b_ms = b_ms,
+                    b_us = b_us)
   
-  #Take the penalized movie effects into account:
-  b_us <- train_set %>% 
-    left_join(b_ms, by="movieId") %>%
-    group_by(userId) %>%
-    summarize(b_u = sum(rating - b_m - mu_hat)/(n() + lambda)) %>%
-    select(userId, b_u)
+  #Check if the timing effects are needed
+  if(is_time) {
+    #Add the computed coefficients to the model
+    ext_model <- append(ext_model, list(b_ts = b_ts))
+    
+    cat("The first 10 b_t values are:", b_ts$b_t[1:10],
+        ", N/A count:", sum(is.na(b_ts$b_t)), "\n")
+  }
+  
+  cat("The first 10 b_m values are:", b_ms$b_m[1:10], "\n")
   cat("The first 10 b_u values are:", b_us$b_u[1:10], "\n")
   
-  #Return the result
-  return(list(mu_hat = mu_hat, b_ms = b_ms, b_us = b_us))
+  return(append(base_model, ext_model))
 }
 
 #--------------------------------------------------------------------
@@ -264,18 +369,30 @@ prepare_model <- function(train_set, lambda) {
 #--------------------------------------------------------------------
 compute_model_rmse <- function(model, data_set) {
   cat("Predicting ratings for the given model and data set\n")
-  
-  #Make the prediction according to the model
-  raw_pred_ratings <- 
-    data_set %>% 
-    left_join(model$b_ms, by = "movieId") %>%
-    left_join(model$b_us, by = "userId") %>%
-    mutate(pred = model$mu_hat + b_m + b_u) %>%
-    pull(pred)
+
+  #Check if the timing effects are needed
+  is_time = is_timing_effects(model)
+  if(is_time) {
+    #Make the prediction according to the model
+    raw_pred_ratings <- 
+      data_set %>% 
+      left_join(model$b_ts, by = "weekId") %>%
+      left_join(model$b_ms, by = "movieId") %>%
+      left_join(model$b_us, by = "userId") %>%
+      mutate(pred = model$mu_hat + b_t + b_m + b_u) %>%
+      pull(pred)
+  } else {
+    #Make the prediction according to the model
+    raw_pred_ratings <- 
+      data_set %>%
+      left_join(model$b_ms, by = "movieId") %>%
+      left_join(model$b_us, by = "userId") %>%
+      mutate(pred = model$mu_hat + b_m + b_u) %>%
+      pull(pred)
+  }
 
   cat("The 1:10 predicted ratings:", raw_pred_ratings[1:10],
       "N/A ratings count =", sum(is.na(raw_pred_ratings)), "\n")
-  
   cat("The 1:10 true ratings:", data_set$rating[1:10],
       "N/A ratings count =", sum(is.na(data_set$rating)), "\n")
   
@@ -297,7 +414,8 @@ compute_model_rmse <- function(model, data_set) {
 #    rmses - the corresponding rmses computed for the
 #            lambdas on the testing set
 #--------------------------------------------------------------------
-train_model <- function(data_set) {
+train_model <- function(data_set, is_time) {
+  
   cat("Splitting the data set into the testing and training set with the",
       TEST_TO_TRAIN_SET_RATIO, "ratio\n")
   #Split the data set into a training and testing parts
@@ -324,16 +442,19 @@ train_model <- function(data_set) {
 
   cat("Tuning the model with lambda parameters from the range:", REGULARIZATION_LAMBDAS, "\n")
   
+  #Initialize the base model
+  base_model <- init_model(train_set, is_time)
+  
   #Tune for the different values of the lambda parameter
   rmses <- sapply(REGULARIZATION_LAMBDAS, function(lambda){
     cat("Training the model with lambda = ", lambda, "\n")
     
     #Make the model for the given lambda, on the training set
-    lambda_model <- prepare_model(train_set, lambda)
+    prepared_model <- prepare_model(base_model, train_set, lambda)
     
     cat("Computing the RMSE score for the model\n")
     #Compute the RSME score, on the test set
-    rmse <- compute_model_rmse(lambda_model, test_set)
+    rmse <- compute_model_rmse(prepared_model, test_set)
     cat("The RMSE score for lambda = ", lambda, " is", rmse,"\n")
     
     return(rmse)
@@ -343,7 +464,7 @@ train_model <- function(data_set) {
   opt_lambda <- REGULARIZATION_LAMBDAS[which.min(rmses)]
   
   #Re-create the model on the complete set with the optimal lambda
-  trained_model <- prepare_model(data_set, opt_lambda)
+  trained_model <- prepare_model(base_model, data_set, opt_lambda)
   
   cat("For lambdas =", REGULARIZATION_LAMBDAS, "got rmse scores =", rmses, "\n")
   
@@ -357,18 +478,24 @@ train_model <- function(data_set) {
 #--------------------------------------------------------------------
 # 
 #--------------------------------------------------------------------
-evaluate_model <- function(movielens_model, data_set, movielens_report) {
-  cat("Compute the RMSE for the final model on the validation set")
+evaluate_model <- function(model, data_set, movielens_report) {
+  cat("Compute the model's RMSE on the validation set\n")
   
   #Compute the RMSE for the model and the data set
-  rmse <- compute_model_rmse(movielens_model, data_set)
+  rmse <- compute_model_rmse(model, data_set)
   
-  cat("The computed RMSE for the final model on the validation set is ", rmse, "\n")
+  #Check if the model takes the timing effects into account
+  is_time = is_timing_effects(model)
+  
+  cat("The validation set RMSE (lambda =", model$lambda, "timing =", is_time, ") is ", rmse, "\n")
   
   #Extend the report with the model and the RMSE score
-  movielens_results <- tibble(movielens_model = movielens_model)
-  movielens_report <- append(movielens_report, movielens_results)
-  movielens_report <- append(movielens_report, list(validation_set_rmse = rmse))
+  model_result <- tibble(model = model, rmse = rmse, is_time = is_time)
+  if(is_time){
+    movielens_report <- append(movielens_report, list(basic_model_res = model_result))
+  } else {
+    movielens_report <- append(movielens_report, list(timing_model_res = model_result))
+  }
 
   return(movielens_report)
 }
@@ -386,11 +513,19 @@ movielens_data <- get_movielens_data()
 #     the required information for the report to be generated
 movielens_report <- init_report_data(movielens_data)
 
-#03 - Incrementally build and train the model
-movielens_model <- train_model(movielens_data$edx)
+#03 - Incrementally build and train the model WITHOUT the timing effects
+basic_model <- train_model(movielens_data$edx, FALSE)
 
 #04 - Evaluate the model on the validation set and compute the RMSE
-movielens_report <- evaluate_model(movielens_model,
+movielens_report <- evaluate_model(basic_model,
+                                   movielens_data$validation,
+                                   movielens_report)
+
+#05 - Incrementally build and train the model WITH the timing effects
+timing_model <- train_model(movielens_data$edx, TRUE)
+
+#06 - Evaluate the model on the validation set and compute the RMSE
+movielens_report <- evaluate_model(timing_model,
                                    movielens_data$validation,
                                    movielens_report)
 
