@@ -12,6 +12,8 @@ library(tidyverse)
 library(lubridate)
 library(graphics)
 
+options(digits=5)
+
 MOVIELENS_DATA_FILE_NAME <- "movielens_data.rda"
 MOVIELENS_REPORT_FILE_NAME <- "movielens_report.rda"
 
@@ -86,7 +88,7 @@ Let us now briefly outline the main steps to be performed to reach the previousl
 3. **Describe the modeling approach** -- see the *"Modeling approach"* section:
     + Consider the insights of the data analysis; suggest the way for building the prediction model.
 4. **Present modeling results** -- see the  *"Results"* section:
-    + Train the model on the test set; analyze the training results; evaluate on the validation set.
+    + Train the model on the `edx` set; analyze the training results; evaluate on the `validation` set.
 5. **Provide concluding remarks** -- see the *"Conclusions"* section:
     + Summarize the results; mention any approach limitations; outline possible future improvements.
 
@@ -341,30 +343,155 @@ Let us now consider the data effects *(O.I)* -- *(O.VII)* outlined in the *"Data
 
 Based on the above, we shall split our modeling approach into two parts:
 
-1. **Base model**: We take the statistical model of the movie recommendation system explained in the literature.
+1. **Base model**: The movie recommendation system explained in the literature.
 2. **Timing model**: We extend the *Base model* taking into account the timing effects *(O.VI)*.
 
 Similar to the timing effects, we could also take the movie popularity effects *(O.VII)* into account. However, as the *"Results"* section will reveal, the *Timing model* will already have the RMSE score significantly below the desired $0.8649$ value, c.f. section *"Project goal"*. Therefore, the *(O.VII)* effect will not be taken into account and will be left for future work.
 
-Further, we shall first outline the **Base model*, as present in the literature. Next, we explain how we extended towards the *Timing model*, taking the timing effects with Regularization into account.
+Further, we shall first outline the *Base model*, as present in the literature. Next, we explain how we extended towards the *Timing model*, taking the timing effects with Regularization into account.
 
 **Note that:** We consider the *Timing model* to be the $\underline{\text{innovative part}}$ of this work, as it builds upon the existing *Base model*, and will be shown to improves the predictions.
 
 [^2]: Chapter $33.7$: *"Recommendation systems"* of the **"Introduction to Data Science"** [online book](https://rafalab.github.io/dsbook/) by Rafael A. Irizarry
 
-## Base model approach
+## Base model
+The *Base model* estimates the probability distribution of $Pr\left(R \; \vert \; M = m, \;U = u\right)$ and can be summarized as:
+\[
+    R_{m,u} = \mu + b_{m} + b_{u} + \epsilon_{m,u}
+\]
+where:
 
+* $\epsilon_{m,u}$ -- independent errors, sampled from the same distribution centered at $0$
+* $\mu$ -- the average rating of all the movies
+* $b_{m}$ -- the movie bias for movie $m$
+* $b_{u}$ -- the user bias for user $u$
 
-## Modeling timing effects
+Note that, $b_{m}$ and $b_{u}$ could be estimated using, for instance, the linear model (using `lm()` in `R`):
+```{r, eval=FALSE}
+lm(rating ~ as.factor(movieId) + as.factor(userId))
+```
+However there are two reasons for not doing this:
 
+1. Due to the size of the MovieLens data set and the number of individual movies and users, the time needed to fit even this simple model on a regular PC can be days.
+2. To account for the *(O.V)* effects, we will use Regularization that has to penalize the $b_{m}$ and $b_{u}$ values.
+
+The Regularization technique, with the $\lambda$ modeling parameter, is used to account for the movies for which too few ratings are given and the users that gave too few ratings. Those by default may get $b_{m}$ and $b_{u}$ values which are either too high or too low solely due to being based on too few observations. The base model approach therefore suggests to use the estimated $\mu$, $b_{m}$ and $b_{u}$ values as follows:
+\[
+    \hat{\mu} = \frac{1}{N}\sum_{m,u}r_{m,u}
+\]
+\[
+    \hat{b_{m}} = \frac{\sum_{u=1}^{N_{m}}\left(r_{m,u} - \hat{\mu}\right)}{\lambda + N_{m}}
+\]
+\[
+    \hat{b_{u}} = \frac{\sum_{m=1}^{N_{u}}\left(r_{m,u} - \hat{b_{m}} - \hat{\mu}\right)}{\lambda + N_{u}}
+\]
+where:
+
+* $r_{m,u}$ -- is the rating of the movie $m$ by the user $u$
+* $N$ -- is the total number of movie ratings
+* $N_{m}$ -- is the number of ratings given to the movie $m$
+* $N_{u}$ -- is the number of ratings given by the user $u$
+
+The optimal value of $\lambda$ is to be selected during the training phase of the model. The `RMSE` optimizing value of $\lambda_{\text{opt}}$ is to be used when computing the `RMSE` scores but the value of $\lambda_{\text{opt}}$ can not be based on the `validation` set. Thus, we apply cross validation technique by splitting the `edx` set into the `training` and `testing` sets respectively taking `r (1 - movielens_report$TEST_TO_TRAIN_SET_RATIO)*100`% and `r movielens_report$TEST_TO_TRAIN_SET_RATIO*100`% of the `edx` set. To avoid testing failures, the care is taken of not having users and movies in the `testing` sets that are not present in the `training` set.
+
+The actual *Base model* movie rating estimate for movie $u$ and user $u$ will then be:
+\[
+    r_{m,u} = \hat{\mu} + \hat{b_{m}} + \hat{b_{u}}
+\]
+
+## Timing model
+To account for the timing effects, we need to estimate the probability distribution of 
+\[
+Pr\left(R \; \vert \; M = m, \;U = u, \;T = t\right)
+\]
+which can be done using the next model:
+\[
+    R_{m,u} = \mu + b_{m} + b_{u} + f\left(t_{m,u}\right) + \epsilon_{m,u}
+\]
+where:
+
+* $t_{m,u}$ -- is the time at which the movie $m$ is to be rated by the user $u$
+    + We shall stratify our time per week, as was done to show the *(O.V)* effect
+* $f\left(.\right)$ -- a smooth function of its argument $t_{m,u}$
+    + We shall use the Local Polynomial Regression Fitting (*LOESS*) with the degree $2$ for this
+    
+As with the *Basic model* the coefficients are to be estimated. Moreover, we will also apply Regularization to the timing effect represented by $f\left(t_{m,u}\right)$ to account for the weeks with too few movie ratings, if any. The smooth function $f\left(.\right)$ will be computed as the polynomial surface based on the average movie rating per week, using the LOESS algorithm.
+
+Let $t = t_{m,u}$, then the movie rating estimate of the *Timing model* for movie $m$ and user $u$ in week $t$ is:
+\[
+    r_{m,u} = \hat{\mu} + \hat{b_{t}} + \hat{b_{m}} + \hat{b_{u}}
+\]
+with the following coefficients:
+\[
+    \hat{\mu} = \frac{1}{N}\sum_{m,u}r_{m,u}
+\]
+\[
+    \hat{b_{t}} = \frac{\sum_{u=1}^{N_{t}}\left(f\left(t_{m,u}\right) - \hat{\mu}\right)}{\lambda + N_{t}}
+\]
+\[
+    \hat{b_{m}} = \frac{\sum_{u=1}^{N_{m}}\left(r_{m,u} - \hat{b_{t}} - \hat{\mu}\right)}{\lambda + N_{m}}
+\]
+\[
+    \hat{b_{u}} = \frac{\sum_{m=1}^{N_{u}}\left(r_{m,u} - \hat{b_{t}} - \hat{b_{m}} - \hat{\mu}\right)}{\lambda + N_{u}}
+\]
+where:
+
+* $N_{t}$ - is the number of movie ratings given in week $t = t_{m,u}$
+
+We do not provide any mathematical proof of the *Timing model* correctness, but we are going to share out intuition for it. Without Regularization, $\hat{b_{t}}$ is to capture the average rating deviation in week $t$ from the overall average rating. The deviation is to be a smooth function of time which we therefore estimate as $\hat{b_{t}} = f\left(t_{m,u}\right) - \hat{\mu}$. If we now add Regularization on top, we shall the get the $\hat{b_{t}}$ formula as above.
 
 # Results
 <!--a results section that presents the modeling results and discusses the model performance-->
+In this section we present our model tuning and validation results. The former give insights into the model training and indicate the found optimal $\lambda$ values. The latter consist of the model `RMSE` score on the `validation` set. We start with the *Basic model* and then proceed with the *Timing model*. 
+
+## Basic model
+```{r, echo=F}
+bmr <- movielens_report$basic_model_res
+```
+Training the *Basic model* on the range of $\lambda$ has revealed that the optimal value $\lambda^{b}_{opt} =$ `r bmr$model$lambda` with the corresponding minimum `RMSE` score on the `testing` set `r min(bmr$model$rmses)`. Below one can see the training plot for the model:
+```{r, echo = F}
+min_rmse <- min(bmr$model$rmses)
+max_rmse <- max(bmr$model$rmses)
+tibble(lambdas = bmr$model$lambdas,
+       rmses = bmr$model$rmses) %>%
+  ggplot(aes(lambdas, rmses)) +
+  geom_point() +
+  geom_hline(aes(yintercept = min_rmse, color=I("brown")), lty=2) +
+  scale_y_continuous(breaks=seq(min_rmse, max_rmse, length.out = 10)) +
+  scale_x_continuous(breaks=seq(0, 7, 0.5)) +
+  theme(axis.text.x = element_text(angle = 45)) + 
+  labs(x="lambda", y="RMSE") +
+  ggtitle("Basic model fitting on the testing set") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+```
+The `RMSE` score of the *Basic model* on the `validation` set is `r bmr$rmse`.
+
+## Timing model
+```{r, echo=F}
+tmr <- movielens_report$timing_model_res
+```
+Training the *Timing model* on the range of $\lambda$ has revealed that the optimal value $\lambda^{b}_{opt} =$ `r tmr$model$lambda` with the corresponding minimum `RMSE` score on the `testing` set `r min(tmr$model$rmses)`. Below one can see the training plot for the model:
+```{r, echo = F}
+min_rmse <- min(tmr$model$rmses)
+max_rmse <- max(tmr$model$rmses)
+tibble(lambdas = tmr$model$lambdas,
+       rmses = tmr$model$rmses) %>%
+  ggplot(aes(lambdas, rmses)) +
+  geom_point() +
+  geom_hline(aes(yintercept = min_rmse, color=I("brown")), lty=2) +
+  scale_y_continuous(breaks=seq(min_rmse, max_rmse, length.out = 10)) +
+  scale_x_continuous(breaks=seq(0, 7, 0.5)) +
+  theme(axis.text.x = element_text(angle = 45)) + 
+  labs(x="lambda", y="RMSE") +
+  ggtitle("Timing model fitting on the testing set") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+```
+The `RMSE` score of the *Timing model* on the `validation` set is `r tmr$rmse`.
 
 # Conclusions
 <!--a conclusion section that gives a brief summary of the report, its limitations and future work (the last two are recommended but not necessary)-->
 
-**TODO: possible extensions** 
+## Future work 
 
 * Individual lambda tuning for regularized predictors
 * Account for popularity effects
