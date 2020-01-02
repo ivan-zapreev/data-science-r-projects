@@ -487,7 +487,7 @@ evaluate_model <- function(model, data_set, movielens_report) {
   #Check if the model takes the timing effects into account
   is_time = is_timing_effects(model)
   
-  cat("The validation set RMSE (lambda =", model$lambda, "timing =", is_time, ") is ", rmse, "\n")
+  cat("The validation set RMSE ( lambda =", model$lambda, ", timing =", is_time, ") is ", rmse, "\n")
   
   #Extend the report with the model and the RMSE score
   model_result <- tibble(model = model, rmse = rmse, is_time = is_time)
