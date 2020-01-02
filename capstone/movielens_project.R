@@ -238,7 +238,7 @@ init_model <- function(train_set, is_time) {
       group_by(weekId) %>%
       summarise(avg_rating = mean(rating)) %>%
       mutate(weekId = as.numeric(weekId)) %>%
-      loess(avg_rating ~ weekId, degree=2, data=.)
+      loess(avg_rating ~ weekId, degree = 2, data = .)
     
     #Extend the model with the LOESS fit model
     model <- append(model, list(b_t_fit = b_t_fit))
@@ -490,11 +490,11 @@ evaluate_model <- function(model, data_set, movielens_report) {
   cat("The validation set RMSE ( lambda =", model$lambda, ", timing =", is_time, ") is ", rmse, "\n")
   
   #Extend the report with the model and the RMSE score
-  model_result <- tibble(model = model, rmse = rmse, is_time = is_time)
-  if(is_time){
-    movielens_report <- append(movielens_report, list(basic_model_res = model_result))
-  } else {
+  model_result <- list(model = model, rmse = rmse, is_time = is_time)
+  if(is_time) {
     movielens_report <- append(movielens_report, list(timing_model_res = model_result))
+  } else {
+    movielens_report <- append(movielens_report, list(basic_model_res = model_result))
   }
 
   return(movielens_report)
