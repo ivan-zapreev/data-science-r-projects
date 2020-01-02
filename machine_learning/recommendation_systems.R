@@ -311,11 +311,21 @@ dat2
 dat2 %>%
   ggplot(aes(x=genres, y=avg)) +
   geom_point() +
-  theme(axis.text.x = element_text(angle = 90))
+  theme(axis.text.x = elemgeom_errorbar(aes(x = genres, 
+                    ymin = avg - qnorm(0.975)*se,
+                    ymax = avg + qnorm(0.975)*se))+
+  ent_text(angle = 90))
 
 #---------------
 
-#Split the genres into multiple rows
+#Splitdat1 %>%
+  group_by(genres) %>%
+  ggplot(aes(x=genres, y=rating)) +
+  geom_point() +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90))
+
+ the genres into multiple rows
 dat_genres <- movielens %>% 
   separate_rows(genres, sep="\\|") %>%
   mutate(genres = factor(genres)) %>%
