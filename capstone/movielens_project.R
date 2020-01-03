@@ -3,6 +3,7 @@
 ####################################################################
 options(digits=10)
 
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
@@ -21,7 +22,9 @@ VALIDATION_TO_EDX_SET_RATIO <- 0.1
 #Define the test versus train set ratio
 TEST_TO_TRAIN_SET_RATIO <- 0.2
 #Define a sequene of lambdas for regularization
-REGULARIZATION_LAMBDAS <- seq(0, 7, 0.25)
+REGULARIZATION_LAMBDAS <- seq(2, 8, 0.25)
+REGULARIZATION_LAMBDAS_M <- seq(4, 6, 0.25)
+REGULARIZATION_LAMBDAS_U <- seq(4, 6, 0.25)
 
 #--------------------------------------------------------------------
 # Define some constant parameters
@@ -99,8 +102,9 @@ split_train_test_sets <- function(data_set, ratio) {
 #--------------------------------------------------------------------
 # This function derived from the project initialization instructions
 # to create edx set, validation set. It returns a list with the
-# two corresponding entries:
+# corresponding entries:
 #   edx - storing the edx set, meant for training
+#   edx_split - toring the edx set, split into training and testing sub-sets
 #   validation - storing the validation set, meant for final RMSE evaluation
 #
 # Note: Running this function could take a couple of minutes
@@ -146,11 +150,7 @@ create_movielens_sets <- function() {
   #Extend the data set with the week
   movielens <- movielens %>% 
     mutate(weekId = round_date(as_datetime(timestamp), "week"))
-  
-  #Before splitting the data set into the training and testing parts set the random seed  
-  set.seed(1, sample.kind="Rounding")
-  # if using R 3.5 or earlier, use `set.seed(1)` instead
-  
+
   #Split the sets into training and testing
   split_sets <- split_train_test_sets(movielens, VALIDATION_TO_EDX_SET_RATIO)
 
@@ -158,8 +158,11 @@ create_movielens_sets <- function() {
   ifrm(dl)
   rm(ratings, movies, movielens)
   
+  #Split the edx set further into another training and testing parts
+  split_edx_sets <- split_train_test_sets(split_sets$train_set, TEST_TO_TRAIN_SET_RATIO)
+
   cat("Finished preparing the data, creating the final data frame\n");
-  return(list(edx=split_sets$train_set, validation=split_sets$test_set))
+  return(list(edx=split_sets$train_set, edx_split = split_edx_sets, validation=split_sets$test_set))
 }
 
 #--------------------------------------------------------------------
@@ -241,18 +244,21 @@ RMSE <- function(true_ratings, predicted_ratings) {
 #    train_set - the training set data
 #    is_time - the timing effects flag, if true then the LOESS fit
 #              for the average movie rating per week is computed
+#    is_lambda - true if the individual lambdas are to be used for 
+#                the movie and user effects
 # The function returns a list with two attribuites
 # one of which is optional:
 #    mu_hat - the average movie rating
-#    b_t_fit - the fitted LOES model for the average 
-#              movie rating per weeek
+#    is_time - the timing model flag
+#    b_ts    - the timing effect coefficients
+#    is_lambda - the individual lambdas model flag
 #--------------------------------------------------------------------
-init_model <- function(train_set, is_time) {
+init_model <- function(train_set, is_time, is_lambda) {
   #Copmute the overal movie average
   mu_hat <- mean(train_set$rating)
   
   #Initialize the model with the mean rating
-  model <- list(mu_hat = mu_hat)
+  model <- list(mu_hat = mu_hat, is_time = is_time, is_lambda = is_lambda)
   
   #Check if we need to take the timing effects into account
   if(is_time) {
@@ -279,15 +285,6 @@ init_model <- function(train_set, is_time) {
   
   #Return the result
   return(model)
-}
-
-#--------------------------------------------------------------------
-# This helper function accepts a model list and checks
-# if it has the "b_ts" key. If it does then it returns 
-# TRUE and otherwise FALSE.
-#--------------------------------------------------------------------
-is_timing_effects <- function(model) {
-  return(sum(str_detect(names(model),"b_ts")) != 0)
 }
 
 #--------------------------------------------------------------------
@@ -325,20 +322,19 @@ is_timing_effects <- function(model) {
 #     b_m - the data frame with the movieIds and the corresponding b_m values
 #     b_u - the data frame with the userIds and the corresponding b_u values
 #--------------------------------------------------------------------
-prepare_model <- function(base_model, train_set, lambda) {
+prepare_model <- function(base_model, train_set, lambda_m, lambda_u) {
   #Copmute the overal movie average
   mu_hat <- base_model$mu_hat
   
-  cat("The mean movie rating for lambda", lambda, "is", mu_hat, "\n")
+  cat("The preparing the model for lambda_m =", lambda_m, "and lambda_u =", lambda_u, "\n")
   
   #Check if the timing effects are needed
-  is_time = is_timing_effects(base_model)
-  if(is_time) {
+  if(base_model$is_time) {
     #Compute the movie rating effects:
     b_ms <- train_set %>% 
       left_join(base_model$b_ts, by = "weekId") %>%
       group_by(movieId) %>%
-      summarize(b_m = sum(rating - b_t - mu_hat) / (n() + lambda)) %>%
+      summarize(b_m = sum(rating - b_t - mu_hat) / (n() + lambda_m)) %>%
       select(movieId, b_m)
     
     #Compute the user rating effects:
@@ -346,25 +342,26 @@ prepare_model <- function(base_model, train_set, lambda) {
       left_join(b_ms, by = "movieId") %>%
       left_join(base_model$b_ts, by = "weekId") %>%
       group_by(userId) %>%
-      summarize(b_u = sum(rating - b_t - b_m - mu_hat) / (n() + lambda)) %>%
+      summarize(b_u = sum(rating - b_t - b_m - mu_hat) / (n() + lambda_u)) %>%
       select(userId, b_u)
   } else {
     #Compute the movie rating effects:
     b_ms <- train_set %>% 
       group_by(movieId) %>%
-      summarize(b_m = sum(rating - mu_hat) / (n() + lambda)) %>%
+      summarize(b_m = sum(rating - mu_hat) / (n() + lambda_m)) %>%
       select(movieId, b_m)
 
     #Compute the user rating effects:
     b_us <- train_set %>% 
       left_join(b_ms, by = "movieId") %>%
       group_by(userId) %>%
-      summarize(b_u = sum(rating - b_m - mu_hat) / (n() + lambda)) %>%
+      summarize(b_u = sum(rating - b_m - mu_hat) / (n() + lambda_u)) %>%
       select(userId, b_u)
   }
 
   #Return the result
-  ext_model <- list(lambda = lambda, 
+  ext_model <- list(lambda_m = lambda_m,
+                    lambda_u = lambda_u, 
                     b_ms = b_ms,
                     b_us = b_us)
 
@@ -387,8 +384,7 @@ compute_model_rmse <- function(model, data_set) {
   cat("Predicting ratings for the given model and data set\n")
 
   #Check if the timing effects are needed
-  is_time = is_timing_effects(model)
-  if(is_time) {
+  if(model$is_time) {
     #Make the prediction according to the model
     raw_pred_ratings <- 
       data_set %>% 
@@ -417,8 +413,115 @@ compute_model_rmse <- function(model, data_set) {
 }
 
 #--------------------------------------------------------------------
+# This function prepares the model on the trainig set and evaluates
+# the model it on the testing set for the given lambda values
+#    base_model - the base model with some initial information
+#    split_sets - the list storing train_set and test_set
+#    lambda_m - the lambda for the movies effect
+#    lambda_u - the lambda for the users effect
+# Returns the RMSE score on the test_set
+#--------------------------------------------------------------------
+prepare_and_score_model <- function(base_model, split_sets, lambda_m, lambda_u) {
+  cat("Training the model with lambda_m =", lambda_m, ", lambda_u =", lambda_u, "\n")
+  
+  #Make the model for the given lambda, on the training set
+  prepared_model <- prepare_model(base_model, split_sets$train_set, lambda_m, lambda_u)
+  
+  cat("Computing the RMSE score for the model\n")
+  #Compute the RSME score, on the test set
+  rmse <- compute_model_rmse(prepared_model, split_sets$test_set)
+  cat("The RMSE score for lambda_m =", lambda_m, ", lambda_u =", lambda_u, " is", rmse,"\n")
+  
+  return(rmse)
+}
+
+#--------------------------------------------------------------------
+# Tunes the model with the individual lambdas for the movie and user
+# effects, accepts the following arguments:
+#    base_model - the base model with some initial information
+#    split_sets - the list storing train_set and test_set
+# Returns a list with the following attributes:
+#    opt_lambda_m - the found optimal movie effects lambda
+#    opt_lambda_u - the found optimal user effects lambda
+#    opt_rmse - the optimal RMSE
+#    tuning_grid - the tuning grid
+#--------------------------------------------------------------------
+train_model_individual_lambdas <- function(base_model, split_sets) {
+  #Report lambdas
+  lambda_m <- REGULARIZATION_LAMBDAS_M
+  lambda_u <- REGULARIZATION_LAMBDAS_U
+  cat("Tuning the model with lambda_m for: ",
+      min(lambda_m), ":", max(lambda_m), ":", lambda_m[2] - lambda_m[1],
+      ", and lambda_r for: ",
+      min(lambda_u), ":", max(lambda_u), ":", lambda_u[2] - lambda_u[1],
+      "\n", sep = "")
+  
+  #Tune for the different values of the lambda parameter
+  cross_lambdas <- crossing(lambda_m, lambda_u)
+  tuning_grid <- mapply(function(lambda_m, lambda_u){
+    rmse <- prepare_and_score_model(base_model, split_sets, lambda_m, lambda_u)
+    list(res = data.frame(lambda_m = lambda_m, lambda_u = lambda_u, rmse = rmse))
+  }, cross_lambdas$lambda_m, cross_lambdas$lambda_u)
+  tuning_grid <- do.call("rbind", tuning_grid)
+  row.names(tuning_grid) <- 1:nrow(tuning_grid)
+  
+  #Obtain the optimal values
+  opt_rmse <- min(tuning_grid$rmse)
+  opt_rmse_idx <- which.min(tuning_grid$rmse)
+  opt_lambda_m <- tuning_grid$lambda_m[opt_rmse_idx]
+  opt_lambda_u <- tuning_grid$lambda_u[opt_rmse_idx]
+  
+  return(list(opt_lambda_m = opt_lambda_m, 
+              opt_lambda_u = opt_lambda_u, 
+              opt_rmse = opt_rmse,
+              tuning_grid = tuning_grid))
+}
+
+#--------------------------------------------------------------------
+# Tunes the model with the single lambda for the movie and user
+# effects, accepts the following arguments:
+#    base_model - the base model with some initial information
+#    split_sets - the list storing train_set and test_set
+# Returns a list with the following attributes:
+#    opt_lambda_m - the found optimal lambda, equal to opt_lambda_u
+#    opt_lambda_u - the found optimal lambda, equal to opt_lambda_m
+#    opt_rmse - the optimal RMSE
+#    tuning_grid - the tuning grid
+#--------------------------------------------------------------------
+train_model_single_lambdas <- function(base_model, split_sets) {
+  #Report lambdas
+  lambdas <- REGULARIZATION_LAMBDAS
+  cat("Tuning the model with lambda for: ",
+      min(lambdas), ":", max(lambdas), ":", lambdas[2] - lambdas[1], 
+      "\n", sep = "")
+  
+  #Tune for the different values of the lambda parameter
+  tuning_grid <- sapply(lambdas, function(lambda){
+    rmse <- prepare_and_score_model(base_model, split_sets, lambda, lambda)
+    list(res = data.frame(lambda = lambda, rmse = rmse))
+  })
+  tuning_grid <- do.call("rbind", tuning_grid)
+  row.names(tuning_grid) <- 1:nrow(tuning_grid)
+  
+  #Obtain the optimal values
+  opt_rmse <- min(tuning_grid$rmse)
+  opt_rmse_idx <- which.min(tuning_grid$rmse)
+  opt_lambda_m <- tuning_grid$lambda[opt_rmse_idx]
+  opt_lambda_u <- opt_lambda_m
+  
+  return(list(opt_lambda_m = opt_lambda_m, 
+              opt_lambda_u = opt_lambda_u, 
+              opt_rmse = opt_rmse,
+              tuning_grid = tuning_grid))
+}
+
+#--------------------------------------------------------------------
 # This function trains the rating prediction model on the provided
 #    data_set - the set to train the model on
+#    split_sets - the split data_set into the training and testing sub-sets
+#    is_time - true if the timing effects are to be taken into account
+#    is_lambda - true if the individual lambdas are to be used for 
+#                the movie and user effects
 # The training is done using the penalized regulariation with the
 # lambda parameters in the range defined by REGULARIZATION_LAMBDAS.
 # The parameter selection is based on the test set that consists of
@@ -430,40 +533,26 @@ compute_model_rmse <- function(model, data_set) {
 #    rmses - the corresponding rmses computed for the
 #            lambdas on the testing set
 #--------------------------------------------------------------------
-train_model <- function(data_set, is_time) {
-  #Split the data set into training and testing parts
-  split_sets <- split_train_test_sets(data_set, TEST_TO_TRAIN_SET_RATIO)
-
-  cat("Tuning the model with lambda parameters from the range:", REGULARIZATION_LAMBDAS, "\n")
-  
+train_model <- function(data_set, split_sets, is_time, is_lambda) {
   #Initialize the base model
-  base_model <- init_model(split_sets$train_set, is_time)
+  base_model <- init_model(split_sets$train_set, is_time, is_lambda)
   
-  #Tune for the different values of the lambda parameter
-  rmses <- sapply(REGULARIZATION_LAMBDAS, function(lambda){
-    cat("Training the model with lambda = ", lambda, "\n")
-    
-    #Make the model for the given lambda, on the training set
-    prepared_model <- prepare_model(base_model, split_sets$train_set, lambda)
-    
-    cat("Computing the RMSE score for the model\n")
-    #Compute the RSME score, on the test set
-    rmse <- compute_model_rmse(prepared_model, split_sets$test_set)
-    cat("The RMSE score for lambda = ", lambda, " is", rmse,"\n")
-    
-    return(rmse)
-  })
-
-  #Obtain the optimal value of lambda
-  opt_lambda <- REGULARIZATION_LAMBDAS[which.min(rmses)]
+  if(is_lambda) {
+    result <- train_model_individual_lambdas(base_model, split_sets)
+  } else {
+    result <- train_model_single_lambdas(base_model, split_sets)
+  }
+  
+  cat("For optimal lambda_m =", result$opt_lambda_m, " and lambda_u =",
+      result$opt_lambda_u, "got RMSE score =", result$opt_rmse, "\n")
   
   #Re-create the model on the complete set with the optimal lambda
-  trained_model <- prepare_model(base_model, data_set, opt_lambda)
-  
-  cat("For lambdas =", REGULARIZATION_LAMBDAS, "got rmse scores =", rmses, "\n")
+  trained_model <- prepare_model(base_model, data_set,
+                                 result$opt_lambda_m, 
+                                 result$opt_lambda_u)
   
   #Update the trained model with
-  training_data = tibble(lambdas = REGULARIZATION_LAMBDAS, rmses = rmses)
+  training_data = list(tuning_grid = result$tuning_grid)
   trained_model <- append(trained_model, training_data)
 
   return(trained_model)
@@ -476,30 +565,40 @@ train_model <- function(data_set, is_time) {
 #    data_set - the data set to evaluate the model on (validation set)
 #    report - the movielens report to be extended with the results
 # It retuns the update report list, extended with:
+#    timing_model_ind_lam_res - the results list, if the Timing model 
+#          was used with individual lambdas for movie and user effects
 #    timing_model_res - the results list, if the Timing model was used
+#    basic_mode_ind_lam_res - the results list, if the Basic model 
+#          was used with individual lambdas for movie and user effects
 #    basic_mode_res - the results list, if the Basic model was used
 # The results object contains the following:
 #    model - the evaludated model
 #    rmse - the computed RMSE score
-#    is_time - the flag indicating whether the model is the Timing model
 #--------------------------------------------------------------------
 evaluate_model <- function(model, data_set, report) {
   cat("Compute the model's RMSE on the validation set\n")
   
   #Compute the RMSE for the model and the data set
   rmse <- compute_model_rmse(model, data_set)
-  
-  #Check if the model takes the timing effects into account
-  is_time = is_timing_effects(model)
-  
-  cat("The validation set RMSE ( lambda =", model$lambda, ", timing =", is_time, ") is ", rmse, "\n")
+
+  cat("The validation set RMSE ( lambda_m =", model$lambda_m, ", lambda_u =",
+      model$lambda_u, ", timing effects =", model$is_time, ", individual lambdas =",
+      model$is_lambda, ") is", rmse, "\n")
   
   #Extend the report with the model and the RMSE score
-  model_result <- list(model = model, rmse = rmse, is_time = is_time)
-  if(is_time) {
-    report <- append(report, list(timing_model_res = model_result))
+  model_result <- list(model = model, rmse = rmse)
+  if(model$is_time) {
+    if(model$is_lambda) {
+      report <- append(report, list(timing_model_ind_lam_res = model_result))
+    } else {
+      report <- append(report, list(timing_model_res = model_result))
+    }
   } else {
-    report <- append(report, list(basic_model_res = model_result))
+    if(model$is_lambda) {
+      report <- append(report, list(basic_model_ind_lam_res = model_result))
+    } else {
+      report <- append(report, list(basic_model_res = model_result))
+    }
   }
 
   return(report)
@@ -518,22 +617,42 @@ movielens_data <- get_movielens_data()
 #     the required information for the report to be generated
 movielens_report <- init_report_data(movielens_data)
 
-#03 - Incrementally build and train the model WITHOUT the timing effects
-basic_model <- train_model(movielens_data$edx, FALSE)
-
-#04 - Evaluate the model on the validation set and compute the RMSE
+#03 - Incrementally build and train the model (WITHOUT the timing 
+#     effects and WITHOUT individual lambdas) and evaluate it
+basic_model <- train_model(movielens_data$edx,
+                           movielens_data$edx_split,
+                           FALSE, FALSE)
 movielens_report <- evaluate_model(basic_model,
                                    movielens_data$validation,
                                    movielens_report)
 
-#05 - Incrementally build and train the model WITH the timing effects
-timing_model <- train_model(movielens_data$edx, TRUE)
+#04 - Incrementally build and train the model (WITHOUT the timing
+#     effects and WITH individual lambdas) and evaluate it
+basic_model_ind_lam <- train_model(movielens_data$edx,
+                                   movielens_data$edx_split, 
+                                   FALSE, TRUE)
+movielens_report <- evaluate_model(basic_model_ind_lam,
+                                   movielens_data$validation,
+                                   movielens_report)
 
-#06 - Evaluate the model on the validation set and compute the RMSE
+#05 - Incrementally build and train the model (WITH the timing
+#     effects and WITHOUT individual lambdas) and evaluate it
+timing_model <- train_model(movielens_data$edx,
+                            movielens_data$edx_split,
+                            TRUE, FALSE)
 movielens_report <- evaluate_model(timing_model,
                                    movielens_data$validation,
                                    movielens_report)
 
-#05 - Store the report into the file to be used from the movielens_report.Rmd
+#06 - Incrementally build and train the model (WITH the timing
+#     effects and WITHOUT individual lambdas) and evaluate it
+timing_model_ind_lam <- train_model(movielens_data$edx,
+                                    movielens_data$edx_split,
+                                    TRUE, TRUE)
+movielens_report <- evaluate_model(timing_model_ind_lam,
+                                   movielens_data$validation,
+                                   movielens_report)
+
+#07 - Store the report into the file to be used from the movielens_report.Rmd
 store_report_data(movielens_report)
 
