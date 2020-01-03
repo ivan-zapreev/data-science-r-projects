@@ -346,9 +346,9 @@ Based on the above, we shall split our modeling approach into two parts:
 1. **Base model**: The movie recommendation system explained in the literature.
 2. **Timing model**: We extend the *Base model* taking into account the timing effects *(O.VI)*.
 
-Similar to the timing effects, we could also take the movie popularity effects *(O.VII)* into account. However, as the *"Results"* section will reveal, the *Timing model* will already have the RMSE score significantly below the desired $0.8649$ value, c.f. section *"Project goal"*. Therefore, the *(O.VII)* effect will not be taken into account and will be left for future work.
+Similar to the timing effects, we could also take the movie popularity effects *(O.VII)* into account. However, as the *"Results"* section will reveal, the *Timing model* will already have the RMSE score on the `validation` set below the desired $0.8649$ value, c.f. section *"Project goal"*. Therefore, the *(O.VII)* effect will not be taken into account and will be left for future work.
 
-Further, we shall first outline the *Base model*, as present in the literature. Next, we explain how we extended towards the *Timing model*, taking the timing effects with Regularization into account.
+Further, we shall first outline the *Base model*, as present in the literature. Next, we explain how we extended towards the *Timing model*, taking the timing effects into account.
 
 **Note that:** We consider the *Timing model* to be the $\underline{\text{innovative part}}$ of this work, as it builds upon the existing *Base model*, and will be shown to improves the predictions.
 
@@ -394,7 +394,7 @@ where:
 
 The optimal value of $\lambda$ is to be selected during the training phase of the model. The `RMSE` optimizing value of $\lambda_{\text{opt}}$ is to be used when computing the `RMSE` scores but the value of $\lambda_{\text{opt}}$ can not be based on the `validation` set. Thus, we apply cross validation technique by splitting the `edx` set into the `training` and `testing` sets respectively taking `r (1 - movielens_report$TEST_TO_TRAIN_SET_RATIO)*100`% and `r movielens_report$TEST_TO_TRAIN_SET_RATIO*100`% of the `edx` set. To avoid testing failures, the care is taken of not having users and movies in the `testing` sets that are not present in the `training` set.
 
-The actual *Base model* movie rating estimate for movie $u$ and user $u$ will then be:
+The actual *Base model* movie rating estimate for movie $m$ and user $u$ will then be:
 \[
     r_{m,u} = \hat{\mu} + \hat{b_{m}} + \hat{b_{u}}
 \]
@@ -408,25 +408,49 @@ which can be done using the next model:
 \[
     R_{m,u} = \mu + b_{m} + b_{u} + f\left(t_{m,u}\right) + \epsilon_{m,u}
 \]
+or equivalently
+\[
+    R_{m,u} = \mu + b_{m} + b_{u} + b_{t} + \epsilon_{m,u}
+\]
 where:
 
-* $t_{m,u}$ -- is the time at which the movie $m$ is to be rated by the user $u$
+* $t_{m,u}$ -- is the time at which the movie $m$ is rated by the user $u$
     + We shall stratify our time per week, as was done to show the *(O.V)* effect
-* $f\left(.\right)$ -- a smooth function of its argument $t_{m,u}$
+* $f\left(.\right)$ -- a smooth function of its argument approximating the average movie ratings per week
     + We shall use the Local Polynomial Regression Fitting (*LOESS*) with the degree $2$ for this
+* $b_{t}$ -- is the correction of the mean $\mu$ by the mean rating deviation from $\mu$ in week $t = t_{m,u}$
     
-As with the *Basic model* the coefficients are to be estimated. Moreover, we will also apply Regularization to the timing effect represented by $f\left(t_{m,u}\right)$ to account for the weeks with too few movie ratings, if any. The smooth function $f\left(.\right)$ will be computed as the polynomial surface based on the average movie rating per week, using the LOESS algorithm.
+As with the *Basic model* the $b_{m}$, $b_{u}$, and $b_{t}$ coefficients are to be estimated from the data. 
 
-Let $t = t_{m,u}$, then the movie rating estimate of the *Timing model* for movie $m$ and user $u$ in week $t$ is:
+Let us first explain how the $b_t$ values are computed:
+
+```{r, eval=F}
+    #Compute the smooth Local Regression (LOESS)
+    #fit for the average movie rating per week
+    amrpw_fit <- train_set %>% 
+      group_by(weekId) %>%
+      summarise(avg_rating = mean(rating)) %>%
+      mutate(weekId = as.numeric(weekId)) %>%
+      loess(avg_rating ~ weekId, degree = 2, data = .)
+
+    #Compute the movie rating timing effects per week:
+    b_ts <- train_set %>% 
+      mutate(amrpw = predict(amrpw_fit, as.numeric(weekId))) %>%
+      group_by(weekId) %>%
+      summarize(b_t = min(amrpw) - mu_hat)
+```
+I.e. the smooth function $f\left(.\right)$ is estimated as the polynomial surface based on the average movie rating per week, using the LOESS algorithm. The $b_t$ values are then computed as the "smoothened average movie rating in week $t$", i.e. $f\left(t\right)$, minus the "overall average movie rating", given by $\hat{\mu}$.
+
+To conclude the movie rating estimate of the *Timing model* for movie $m$ and user $u$ in week $t$ is:
 \[
     r_{m,u} = \hat{\mu} + \hat{b_{t}} + \hat{b_{m}} + \hat{b_{u}}
 \]
-with the following coefficients:
+with the coefficients computed as follows:
 \[
     \hat{\mu} = \frac{1}{N}\sum_{m,u}r_{m,u}
 \]
 \[
-    \hat{b_{t}} = \frac{\sum_{u=1}^{N_{t}}\left(f\left(t_{m,u}\right) - \hat{\mu}\right)}{\lambda + N_{t}}
+    \hat{b_{t}} = f\left(b_{t}\right) - \hat{\mu}
 \]
 \[
     \hat{b_{m}} = \frac{\sum_{u=1}^{N_{m}}\left(r_{m,u} - \hat{b_{t}} - \hat{\mu}\right)}{\lambda + N_{m}}
@@ -434,21 +458,18 @@ with the following coefficients:
 \[
     \hat{b_{u}} = \frac{\sum_{m=1}^{N_{u}}\left(r_{m,u} - \hat{b_{t}} - \hat{b_{m}} - \hat{\mu}\right)}{\lambda + N_{u}}
 \]
-where:
 
-* $N_{t}$ - is the number of movie ratings given in week $t = t_{m,u}$
-
-We do not provide any mathematical proof of the *Timing model* correctness, but we are going to share out intuition for it. Without Regularization, $\hat{b_{t}}$ is to capture the average rating deviation in week $t$ from the overall average rating. The deviation is to be a smooth function of time which we therefore estimate as $\hat{b_{t}} = f\left(t_{m,u}\right) - \hat{\mu}$. If we now add Regularization on top, we shall the get the $\hat{b_{t}}$ formula as above.
+Please note that, since we do not apply Regularization to the $\hat{b_{t}}$ parameter, the clarification for the $\hat{b_{m}}$ and $\hat{b_{u}}$ formulae above is straightforward. We can obtain these by considering the  *Basic model* and assume that instead of the overall mean rating $\hat{\mu}$ we use the weekly mean rating $\hat{\mu} + \hat{b_{t}}$. Then the $\hat{b_{m}}$ and $\hat{b_{u}}$ then we will get the corresponding formulae of the *Timing model*.
 
 # Results
 <!--a results section that presents the modeling results and discusses the model performance-->
-In this section we present our model tuning and validation results. The former give insights into the model training and indicate the found optimal $\lambda$ values. The latter consist of the model `RMSE` score on the `validation` set. We start with the *Basic model* and then proceed with the *Timing model*. 
+Below we present our model tuning and validation results. The former indicate the found optimal Regularization parameter $\lambda$ values. The latter provide the trained model `RMSE` scores on the `validation` set. We start with presenting the *Basic model* results and then continue with those of the *Timing model*.
 
 ## Basic model
 ```{r, echo=F}
 bmr <- movielens_report$basic_model_res
 ```
-Training the *Basic model* on the range of $\lambda$ has revealed that the optimal value $\lambda^{b}_{opt} =$ `r bmr$model$lambda` with the corresponding minimum `RMSE` score on the `testing` set `r min(bmr$model$rmses)`. Below one can see the training plot for the model:
+Training the *Basic model* on the range of $\lambda$ in [`r min(bmr$model$lambdas)`, `r max(bmr$model$lambdas)`] has revealed that the optimal value is $\lambda^{b}_{opt} =$ `r bmr$model$lambda`, with the corresponding minimum `RMSE` score on the `testing` set `r min(bmr$model$rmses)`, see the training plot below:
 ```{r, echo = F}
 min_rmse <- min(bmr$model$rmses)
 max_rmse <- max(bmr$model$rmses)
@@ -470,7 +491,7 @@ The `RMSE` score of the *Basic model* on the `validation` set is `r bmr$rmse`.
 ```{r, echo=F}
 tmr <- movielens_report$timing_model_res
 ```
-Training the *Timing model* on the range of $\lambda$ has revealed that the optimal value $\lambda^{b}_{opt} =$ `r tmr$model$lambda` with the corresponding minimum `RMSE` score on the `testing` set `r min(tmr$model$rmses)`. Below one can see the training plot for the model:
+Training the *Timing model* on the range of $\lambda$ in [`r min(tmr$model$lambdas)`, `r max(tmr$model$lambdas)`] has revealed that the optimal value is $\lambda^{b}_{opt} =$ `r tmr$model$lambda`, with the corresponding minimum `RMSE` score on the `testing` set `r min(tmr$model$rmses)`, see the training plot below:
 ```{r, echo = F}
 min_rmse <- min(tmr$model$rmses)
 max_rmse <- max(tmr$model$rmses)
