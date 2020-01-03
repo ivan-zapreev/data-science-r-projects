@@ -12,7 +12,7 @@ library(tidyverse)
 library(lubridate)
 library(graphics)
 
-options(digits=5)
+options(digits=7)
 
 MOVIELENS_DATA_FILE_NAME <- "movielens_data.rda"
 MOVIELENS_REPORT_FILE_NAME <- "movielens_report.rda"
@@ -350,7 +350,7 @@ Similar to the timing effects, we could also take the movie popularity effects *
 
 Further, we shall first outline the *Base model*, as present in the literature. Next, we explain how we extended towards the *Timing model*, taking the timing effects into account.
 
-**Note that:** We consider the *Timing model* to be the $\underline{\text{innovative part}}$ of this work, as it builds upon the existing *Base model*, and will be shown to improves the predictions.
+**Note that:** We consider the *Timing model* to be the **first** $\underline{\text{innovative part}}$ of this work, as it builds upon the existing *Base model*, and will be shown to improve predictions. The **second** $\underline{\text{innovative part}}$ will be attempting using different Regularization parameters for the user and movie effects. This is a natural extension as one can suspect that movie and user effects may be required to be penalized differently.
 
 [^2]: Chapter $33.7$: *"Recommendation systems"* of the **"Introduction to Data Science"** [online book](https://rafalab.github.io/dsbook/) by Rafael A. Irizarry
 
@@ -461,20 +461,41 @@ with the coefficients computed as follows:
 
 Please note that, since we do not apply Regularization to the $\hat{b_{t}}$ parameter, the clarification for the $\hat{b_{m}}$ and $\hat{b_{u}}$ formulae above is straightforward. We can obtain these by considering the  *Basic model* and assume that instead of the overall mean rating $\hat{\mu}$ we use the weekly mean rating $\hat{\mu} + \hat{b_{t}}$. Then the $\hat{b_{m}}$ and $\hat{b_{u}}$ then we will get the corresponding formulae of the *Timing model*.
 
+## Individual lambdas tuning
+
+Note that, for the Regularization with individual lambdas for the movie and user effects, the $\hat{b_{m}}$ and $\hat{b_{u}}$ formulae used in the *Basic* and *Timing* models will be accordingly altered as follows:
+\[
+    \hat{b_{m}} = \frac{\sum_{u=1}^{N_{m}}\left(r_{m,u} - \hat{\mu}\right)}{\lambda^{m} + N_{m}}
+\]
+\[
+    \hat{b_{u}} = \frac{\sum_{m=1}^{N_{u}}\left(r_{m,u} - \hat{b_{m}} - \hat{\mu}\right)}{\lambda^{u} + N_{u}}
+\]
+and
+\[
+    \hat{b_{m}} = \frac{\sum_{u=1}^{N_{m}}\left(r_{m,u} - \hat{b_{t}} - \hat{\mu}\right)}{\lambda^{m} + N_{m}}
+\]
+\[
+    \hat{b_{u}} = \frac{\sum_{m=1}^{N_{u}}\left(r_{m,u} - \hat{b_{t}} - \hat{b_{m}} - \hat{\mu}\right)}{\lambda^{u} + N_{u}}
+\]
+The parameter tuning will be then done on a two dimensional grid to find a pair of RMSE optimal lambda values $\lambda^{m}_{opt}$ and  $\lambda^{u}_{opt}$.
+
 # Results
 <!--a results section that presents the modeling results and discusses the model performance-->
-Below we present our model tuning and validation results. The former indicate the found optimal Regularization parameter $\lambda$ values. The latter provide the trained model `RMSE` scores on the `validation` set. We start with presenting the *Basic model* results and then continue with those of the *Timing model*.
+Below we present our model tuning and validation results. The former indicate the found optimal Regularization parameter $\lambda$ values. The latter provide the trained model `RMSE` scores on the `validation` set. We start with presenting the *Basic model* results and then continue with those of the *Timing model*. The results for the model extension when tuning with individual lambdas are provided in between. In the end, we also summarize the obtained results in the *"Results summary"* subsection.
 
 ## Basic model
 ```{r, echo=F}
 bmr <- movielens_report$basic_model_res
+lm_min <- min(bmr$model$tuning_grid$lambda)
+lm_max <- max(bmr$model$tuning_grid$lambda)
+bt_rmse <- min(bmr$model$tuning_grid$rmse)
 ```
-Training the *Basic model* on the range of $\lambda$ in [`r min(bmr$model$lambdas)`, `r max(bmr$model$lambdas)`] has revealed that the optimal value is $\lambda^{b}_{opt} =$ `r bmr$model$lambda`, with the corresponding minimum `RMSE` score on the `testing` set `r min(bmr$model$rmses)`, see the training plot below:
+Training the *Basic model* on the range of $\lambda$ in [`r lm_min`, `r lm_max`] has revealed that the optimal value is $\lambda_{opt} =$ `r bmr$model$lambda_m`, with the corresponding minimum `RMSE` score on the `testing` set `r bt_rmse`, see the training plot below:
 ```{r, echo = F}
-min_rmse <- min(bmr$model$rmses)
-max_rmse <- max(bmr$model$rmses)
-tibble(lambdas = bmr$model$lambdas,
-       rmses = bmr$model$rmses) %>%
+min_rmse <- min(bmr$model$tuning_grid$rmse)
+max_rmse <- max(bmr$model$tuning_grid$rmse)
+tibble(lambdas = bmr$model$tuning_grid$lambda,
+       rmses = bmr$model$tuning_grid$rmse) %>%
   ggplot(aes(lambdas, rmses)) +
   geom_point() +
   geom_hline(aes(yintercept = min_rmse, color=I("brown")), lty=2) +
@@ -487,16 +508,73 @@ tibble(lambdas = bmr$model$lambdas,
 ```
 The `RMSE` score of the *Basic model* on the `validation` set is `r bmr$rmse`.
 
+### Basic model with individual lambdas
+```{r, echo=F}
+bmilr <- movielens_report$basic_model_ind_lam_res
+lm_min <- min(bmilr$model$tuning_grid$lambda_m)
+lm_max <- max(bmilr$model$tuning_grid$lambda_m)
+lu_min <- min(bmilr$model$tuning_grid$lambda_u)
+lu_max <- max(bmilr$model$tuning_grid$lambda_u)
+bt_rmse <- min(bmilr$model$tuning_grid$rmse)
+
+plot_tuning_grid <- function(tuning_grid, title, lambda_m, lambda_u) {
+  #Get the sequences
+  lm_seq <- sort(unique(bmilr$model$tuning_grid$lambda_m))
+  lu_seq <- sort(unique(bmilr$model$tuning_grid$lambda_u))
+  #Convert the grid data frame into a matrix
+  mtx <- matrix(0, nrow = length(lm_seq), ncol = length(lu_seq))
+  for(i in 1:length(lm_seq)){
+    for(j in 1:length(lu_seq)){ 
+      rmse <- tuning_grid %>% 
+        filter(lambda_m == lm_seq[i] & lambda_u == lu_seq[j]) %>%
+        pull(rmse)
+      mtx[i,j] <- rmse
+    }
+  }
+  #Visualize the results
+  image(lu_seq, lm_seq, t(mtx),
+        xlab="User effect lambdas",
+        ylab="Movie effect lambdas",
+        useRaster=TRUE) %>%
+    abline(h=lu_seq+(lu_seq[2]-lu_seq[1])/2, v=lm_seq+(lm_seq[2]-lm_seq[1])/2, col = "grey") %>%
+    title(main = title)
+  for(i in 1:length(lu_seq)){ 
+    for(j in 1:length(lm_seq)){
+      if(lambda_m == lm_seq[j] & lambda_u == lu_seq[i]) {
+        text(x=lu_seq[i], y=lm_seq[j], as.character(round(mtx[j,i], 7)), cex = 0.625, font=2)
+      } else {
+        text(x=lu_seq[i], y=lm_seq[j], as.character(round(mtx[j,i], 7)), cex = 0.625)
+      }
+    }
+  }
+}
+```
+Training the *Basic model* on the range of $\left(\lambda^{m},\;\lambda^{u}\right)$ in [`r lm_min`, `r lm_max`]x[`r lu_min`, `r lu_max`] has revealed that the optimal values are $\lambda^{m}_{opt} =$ `r bmilr$model$lambda_m` and $\lambda^{u}_{opt} =$ `r bmilr$model$lambda_u`, with the corresponding minimum `RMSE` score on the `testing` set `r bt_rmse`.
+
+```{r, echo=F}
+plot_tuning_grid(bmilr$model$tuning_grid,
+                 "Basic model lambda tuning grid",
+                 bmilr$model$lambda_m,
+                 bmilr$model$lambda_u)
+```
+
+As one can see the found optimal lambda values are not equal to each other and the `RMSE` score on the `testing` set (`r bt_rmse`) is lower than that for the original *Basic model* (`r min(bmr$model$tuning_grid$rmse)`).
+
+The `RMSE` score on the `validation` set turns out to be `r bmilr$rmse`, that is also smaller than the original `RMSE` of the *Basic model* (`r bmr$rmse`).
+
 ## Timing model
 ```{r, echo=F}
 tmr <- movielens_report$timing_model_res
+lm_min <- min(tmr$model$tuning_grid$lambda)
+lm_max <- max(tmr$model$tuning_grid$lambda)
+bt_rmse <- min(tmr$model$tuning_grid$rmse)
 ```
-Training the *Timing model* on the range of $\lambda$ in [`r min(tmr$model$lambdas)`, `r max(tmr$model$lambdas)`] has revealed that the optimal value is $\lambda^{b}_{opt} =$ `r tmr$model$lambda`, with the corresponding minimum `RMSE` score on the `testing` set `r min(tmr$model$rmses)`, see the training plot below:
+Training the *Timing model* on the range of $\lambda$ in [`r lm_min`, `r lm_max`] has revealed that the optimal value is $\lambda_{opt} =$ `r tmr$model$lambda_m`, with the corresponding minimum `RMSE` score on the `testing` set `r bt_rmse`, see the training plot below:
 ```{r, echo = F}
-min_rmse <- min(tmr$model$rmses)
-max_rmse <- max(tmr$model$rmses)
-tibble(lambdas = tmr$model$lambdas,
-       rmses = tmr$model$rmses) %>%
+min_rmse <- min(tmr$model$tuning_grid$rmse)
+max_rmse <- max(tmr$model$tuning_grid$rmse)
+tibble(lambdas = tmr$model$tuning_grid$lambda,
+       rmses = tmr$model$tuning_grid$rmse) %>%
   ggplot(aes(lambdas, rmses)) +
   geom_point() +
   geom_hline(aes(yintercept = min_rmse, color=I("brown")), lty=2) +
@@ -509,8 +587,34 @@ tibble(lambdas = tmr$model$lambdas,
 ```
 The `RMSE` score of the *Timing model* on the `validation` set is `r tmr$rmse`.
 
+### Timing model with individual lambdas
+```{r, echo=F}
+tmilr <- movielens_report$timing_model_ind_lam_res
+lm_min <- min(tmilr$model$tuning_grid$lambda_m)
+lm_max <- max(tmilr$model$tuning_grid$lambda_m)
+lu_min <- min(tmilr$model$tuning_grid$lambda_u)
+lu_max <- max(tmilr$model$tuning_grid$lambda_u)
+bt_rmse <- min(tmilr$model$tuning_grid$rmse)
+```
+Training the *Timing model* on the range of $\left(\lambda^{m},\;\lambda^{u}\right)$ in [`r lm_min`, `r lm_max`]x[`r lu_min`, `r lu_max`] has revealed that the optimal values are $\lambda^{m}_{opt} =$ `r tmilr$model$lambda_m` and $\lambda^{u}_{opt} =$ `r tmilr$model$lambda_u`, with the corresponding minimum `RMSE` score on the `testing` set `r bt_rmse`.
+
+```{r, echo=F}
+plot_tuning_grid(tmilr$model$tuning_grid,
+                 "Timing model lambda tuning grid",
+                 tmilr$model$lambda_m,
+                 tmilr$model$lambda_u)
+```
+
+As one can see the found optimal lambda values are not equal to each other and the `RMSE` score on the `testing` set (`r bt_rmse`) is lower than that for the original *Timing model* (`r min(tmr$model$tuning_grid$rmse)`).
+
+The `RMSE` score on the `validation` set turns out to be `r tmilr$rmse`, that is somewhat higher than the original `RMSE` of the *Timing model* (`r tmr$rmse`).
+
+## Results summary
+<!-- Provides a brief summary of the experimental results -->
+
 # Conclusions
-<!--a conclusion section that gives a brief summary of the report, its limitations and future work (the last two are recommended but not necessary)-->
+<!--a conclusion section that gives a brief summary of the report, its limitations 
+    and future work (the last two are recommended but not necessary)-->
 
 ## Future work 
 
