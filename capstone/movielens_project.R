@@ -1,6 +1,7 @@
 ####################################################################
 # Section to define and load needed packages
 ####################################################################
+options(digits=10)
 
 if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
@@ -33,6 +34,7 @@ RATINGS_DAT_FILE_NAME <- "ml-10M100K/ratings.dat"
 MOVIES_DAT_FILE_NAME <- "ml-10M100K/movies.dat"
 MOVIELENS_DATA_FILE_NAME <- "movielens_data.rda"
 MOVIELENS_REPORT_DATA_FILE_NAME <- "movielens_report.rda"
+FIRST_ELEM_SEQ <- 1:5 #This sequence is used for debug printing purposes only
 
 ####################################################################
 # Section to define helper functions
@@ -49,6 +51,49 @@ ifrm <- function(obj, env = globalenv()) {
   if(exists(obj, envir = env)) {
     rm(list = obj, envir = env)
   }
+}
+
+#--------------------------------------------------------------------
+# This function splits the data set into the training and testing parts:
+#    data_set - the dat set to be split
+#    ratio - the ratio to be used, the % to be used for testing
+# Returns a list with the following attributes:
+#    tratin_set - the training set
+#    test_set - the testing set
+# The function makes sure that the test set does not contain movies 
+# and users not present in the training set
+#--------------------------------------------------------------------
+split_train_test_sets <- function(data_set, ratio) {
+  #Before splitting the data set into the training and testing parts set the random seed  
+  set.seed(1, sample.kind="Rounding")
+  # if using R 3.5 or earlier, use `set.seed(1)` instead
+  
+  cat("Splitting the data set into the testing and training set with the", ratio, "ratio\n")
+  #Split the data set into a training and testing parts
+  #The testing set will be about 10% of original data set
+  test_index <- createDataPartition(y = data_set$rating, times = 1, 
+                                    p = ratio, list = FALSE)
+  
+  #Make the training data to be the 90% of the data set
+  train_set <- data_set[-test_index,]
+  #Make the testing data to be the 10% of the data set
+  temp_set <- data_set[test_index,]
+  
+  #Make sure we don’t include users and movies in the test set
+  test_set <- temp_set %>% 
+    semi_join(train_set, by = "movieId") %>%
+    semi_join(train_set, by = "userId")
+  
+  #Move the movies that did not make it into 
+  #the test set back into the training set
+  removed <- anti_join(temp_set, test_set)
+  train_set <- rbind(train_set, removed)
+  
+  cat("Training set size is", nrow(train_set), "testing set size is", nrow(test_set), "\n")
+  
+  rm(test_index, temp_set, removed)
+  
+  return(list(train_set = train_set, test_set = test_set))
 }
 
 #--------------------------------------------------------------------
@@ -105,36 +150,16 @@ create_movielens_sets <- function() {
   #Before splitting the data set into the training and testing parts set the random seed  
   set.seed(1, sample.kind="Rounding")
   # if using R 3.5 or earlier, use `set.seed(1)` instead
+  
+  #Split the sets into training and testing
+  split_sets <- split_train_test_sets(movielens, VALIDATION_TO_EDX_SET_RATIO)
 
-  #Validation set will be about 10% of MovieLens data
-  cat("Splitting data with", (1-VALIDATION_TO_EDX_SET_RATIO)*100, 
-      "% for the edx (train) set, and", VALIDATION_TO_EDX_SET_RATIO*100,
-      "% for the validation (test) set\n")
-  test_index <- createDataPartition(y = movielens$rating, times = 1, 
-                                    p = VALIDATION_TO_EDX_SET_RATIO, list = FALSE)
-  
-  #Make the edx (training) data to be the 90% of the data set
-  edx <- movielens[-test_index,]
-  #Make the validation (testing) data to be the 10% of the data set
-  temp <- movielens[test_index,]
-  
-  #Make sure userId and movieId in validation set are also in edx set.
-  cat("Make sure that the validation set only contains users and movies from the edx set\n");
-  validation <- temp %>% 
-    semi_join(edx, by = "movieId") %>%
-    semi_join(edx, by = "userId")
-  
-  # Add rows removed from validation set back into edx set
-  cat("Move the excluded events back to the edx set\n");
-  removed <- anti_join(temp, validation)
-  edx <- rbind(edx, removed)
-  
   #Removed the non-needed temporary data
   ifrm(dl)
-  rm(ratings, movies, test_index, temp, movielens, removed)
+  rm(ratings, movies, movielens)
   
   cat("Finished preparing the data, creating the final data frame\n");
-  return(list(edx=edx, validation=validation))
+  return(list(edx=split_sets$train_set, validation=split_sets$test_set))
 }
 
 #--------------------------------------------------------------------
@@ -231,17 +256,25 @@ init_model <- function(train_set, is_time) {
   
   #Check if we need to take the timing effects into account
   if(is_time) {
-    #Compute the smooth Local Regression (LOESS) fit for
-    #the average movie rating per week, to be used to
-    #compute b_t (timing effect) parameters
-    b_t_fit <- train_set %>% 
+    #Compute the smooth Local Regression (LOESS)
+    #fit for the average movie rating per week
+    amrpw_fit <- train_set %>% 
       group_by(weekId) %>%
       summarise(avg_rating = mean(rating)) %>%
       mutate(weekId = as.numeric(weekId)) %>%
       loess(avg_rating ~ weekId, degree = 2, data = .)
     
+    #Compute the movie rating timing effects per week:
+    b_ts <- train_set %>% 
+      mutate(amrpw = predict(amrpw_fit, as.numeric(weekId))) %>%
+      group_by(weekId) %>%
+      summarize(b_t = min(amrpw) - mu_hat) #Movies with equal weekId have equal amrpw values
+    
+    cat("The first b_t values are:", b_ts$b_t[FIRST_ELEM_SEQ],
+        ", N/A count:", sum(is.na(b_ts$b_t)), "\n")
+    
     #Extend the model with the LOESS fit model
-    model <- append(model, list(b_t_fit = b_t_fit))
+    model <- append(model, list(b_ts = b_ts))
   }
   
   #Return the result
@@ -250,11 +283,11 @@ init_model <- function(train_set, is_time) {
 
 #--------------------------------------------------------------------
 # This helper function accepts a model list and checks
-# if it has the "b_t_fit"" key. If it does then it returns 
+# if it has the "b_ts" key. If it does then it returns 
 # TRUE and otherwise FALSE.
 #--------------------------------------------------------------------
 is_timing_effects <- function(model) {
-  return(sum(str_detect(names(model),"b_t_fit")) != 0)
+  return(sum(str_detect(names(model),"b_ts")) != 0)
 }
 
 #--------------------------------------------------------------------
@@ -301,17 +334,9 @@ prepare_model <- function(base_model, train_set, lambda) {
   #Check if the timing effects are needed
   is_time = is_timing_effects(base_model)
   if(is_time) {
-    b_t_fit <- base_model$b_t_fit
-    
-    #Compute the movie rating timing effects:
-    b_ts <- train_set %>% 
-      mutate(lp_t = predict(b_t_fit, as.numeric(weekId))) %>%
-      group_by(weekId) %>%
-      summarize(b_t = sum(lp_t - mu_hat) / (n() + lambda))
-    
     #Compute the movie rating effects:
     b_ms <- train_set %>% 
-      left_join(b_ts, by = "weekId") %>%
+      left_join(base_model$b_ts, by = "weekId") %>%
       group_by(movieId) %>%
       summarize(b_m = sum(rating - b_t - mu_hat) / (n() + lambda)) %>%
       select(movieId, b_m)
@@ -319,7 +344,7 @@ prepare_model <- function(base_model, train_set, lambda) {
     #Compute the user rating effects:
     b_us <- train_set %>% 
       left_join(b_ms, by = "movieId") %>%
-      left_join(b_ts, by = "weekId") %>%
+      left_join(base_model$b_ts, by = "weekId") %>%
       group_by(userId) %>%
       summarize(b_u = sum(rating - b_t - b_m - mu_hat) / (n() + lambda)) %>%
       select(userId, b_u)
@@ -342,18 +367,9 @@ prepare_model <- function(base_model, train_set, lambda) {
   ext_model <- list(lambda = lambda, 
                     b_ms = b_ms,
                     b_us = b_us)
-  
-  #Check if the timing effects are needed
-  if(is_time) {
-    #Add the computed coefficients to the model
-    ext_model <- append(ext_model, list(b_ts = b_ts))
-    
-    cat("The first 10 b_t values are:", b_ts$b_t[1:10],
-        ", N/A count:", sum(is.na(b_ts$b_t)), "\n")
-  }
-  
-  cat("The first 10 b_m values are:", b_ms$b_m[1:10], "\n")
-  cat("The first 10 b_u values are:", b_us$b_u[1:10], "\n")
+
+  cat("The first b_m values are:", b_ms$b_m[FIRST_ELEM_SEQ], "\n")
+  cat("The first b_u values are:", b_us$b_u[FIRST_ELEM_SEQ], "\n")
   
   return(append(base_model, ext_model))
 }
@@ -391,10 +407,10 @@ compute_model_rmse <- function(model, data_set) {
       pull(pred)
   }
 
-  cat("The 1:10 predicted ratings:", raw_pred_ratings[1:10],
-      "N/A ratings count =", sum(is.na(raw_pred_ratings)), "\n")
-  cat("The 1:10 true ratings:", data_set$rating[1:10],
-      "N/A ratings count =", sum(is.na(data_set$rating)), "\n")
+  cat("The first predicted ratings:", raw_pred_ratings[FIRST_ELEM_SEQ],
+      ", N/A count =", sum(is.na(raw_pred_ratings)), "\n")
+  cat("The first true ratings:", data_set$rating[FIRST_ELEM_SEQ],
+      ", N/A count =", sum(is.na(data_set$rating)), "\n")
   
   #Compute and return the RMSE score
   return(RMSE(data_set$rating, raw_pred_ratings))
@@ -415,46 +431,24 @@ compute_model_rmse <- function(model, data_set) {
 #            lambdas on the testing set
 #--------------------------------------------------------------------
 train_model <- function(data_set, is_time) {
-  
-  cat("Splitting the data set into the testing and training set with the",
-      TEST_TO_TRAIN_SET_RATIO, "ratio\n")
-  #Split the data set into a training and testing parts
-  #The testing set will be about 10% of original data set
-  test_index <- createDataPartition(y = data_set$rating, times = 1, 
-                                    p = TEST_TO_TRAIN_SET_RATIO, list = FALSE)
-  
-  #Make the training data to be the 90% of the data set
-  train_set <- data_set[-test_index,]
-  #Make the testing data to be the 10% of the data set
-  temp_set <- data_set[test_index,]
-  
-  #Make sure we don’t include users and movies in the test set
-  test_set <- temp_set %>% 
-    semi_join(train_set, by = "movieId") %>%
-    semi_join(train_set, by = "userId")
-  
-  #Move the movies that did not make it into 
-  #the test set back into the training set
-  removed <- anti_join(temp_set, test_set)
-  train_set <- rbind(train_set, removed)
-  
-  cat("Training set size is", nrow(train_set), "testing set size is", nrow(test_set), "\n")
+  #Split the data set into training and testing parts
+  split_sets <- split_train_test_sets(data_set, TEST_TO_TRAIN_SET_RATIO)
 
   cat("Tuning the model with lambda parameters from the range:", REGULARIZATION_LAMBDAS, "\n")
   
   #Initialize the base model
-  base_model <- init_model(train_set, is_time)
+  base_model <- init_model(split_sets$train_set, is_time)
   
   #Tune for the different values of the lambda parameter
   rmses <- sapply(REGULARIZATION_LAMBDAS, function(lambda){
     cat("Training the model with lambda = ", lambda, "\n")
     
     #Make the model for the given lambda, on the training set
-    prepared_model <- prepare_model(base_model, train_set, lambda)
+    prepared_model <- prepare_model(base_model, split_sets$train_set, lambda)
     
     cat("Computing the RMSE score for the model\n")
     #Compute the RSME score, on the test set
-    rmse <- compute_model_rmse(prepared_model, test_set)
+    rmse <- compute_model_rmse(prepared_model, split_sets$test_set)
     cat("The RMSE score for lambda = ", lambda, " is", rmse,"\n")
     
     return(rmse)
@@ -476,9 +470,20 @@ train_model <- function(data_set, is_time) {
 }
 
 #--------------------------------------------------------------------
-# 
+# This function is responsible for evaluation of the model on the 
+# given data set and updating the report, it accepts arguments:
+#    model - the trained statistical movielens model
+#    data_set - the data set to evaluate the model on (validation set)
+#    report - the movielens report to be extended with the results
+# It retuns the update report list, extended with:
+#    timing_model_res - the results list, if the Timing model was used
+#    basic_mode_res - the results list, if the Basic model was used
+# The results object contains the following:
+#    model - the evaludated model
+#    rmse - the computed RMSE score
+#    is_time - the flag indicating whether the model is the Timing model
 #--------------------------------------------------------------------
-evaluate_model <- function(model, data_set, movielens_report) {
+evaluate_model <- function(model, data_set, report) {
   cat("Compute the model's RMSE on the validation set\n")
   
   #Compute the RMSE for the model and the data set
@@ -492,12 +497,12 @@ evaluate_model <- function(model, data_set, movielens_report) {
   #Extend the report with the model and the RMSE score
   model_result <- list(model = model, rmse = rmse, is_time = is_time)
   if(is_time) {
-    movielens_report <- append(movielens_report, list(timing_model_res = model_result))
+    report <- append(report, list(timing_model_res = model_result))
   } else {
-    movielens_report <- append(movielens_report, list(basic_model_res = model_result))
+    report <- append(report, list(basic_model_res = model_result))
   }
 
-  return(movielens_report)
+  return(report)
 }
 
 ####################################################################
