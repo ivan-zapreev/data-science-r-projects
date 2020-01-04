@@ -654,7 +654,7 @@ kable(tbl, caption = "Training and validation results",
   add_header_above(c(" " = 1, "Training" = 4, "Validation" = 2)) %>%
   kable_styling(latex_options =c("striped", "hold_position"))
 ```
-The table above lists the suggested Movielens models, with the corresponding information on the:
+The table above lists the suggested MovieLens models, with the corresponding information on the:
 
 * Training:
     * The optimal $\lambda$ values for Regularization
@@ -662,7 +662,7 @@ The table above lists the suggested Movielens models, with the corresponding inf
 * Validation:
     * The `RMSE` score of the model on the `validation` set
     * The model's its improvement relative to the previous model
-        * The *Base model* improvement is relative to the `TARGET_RMSE`(`r TARGET_RMSE`)
+        * The *Base model* improvement is relative to the `TARGET_RMSE` (`r TARGET_RMSE`)
 
 From this table we can observe that:
 
@@ -681,17 +681,25 @@ The best scoring model relative to the `TARGET_RMSE` = `r TARGET_RMSE` is the *T
 # Conclusions
 <!--A conclusion section that gives a brief summary of the report, its limitations 
     and future work (the last two are recommended but not necessary)-->
+In this report we have presented our approach to building a movie recommendation system based on the `r movielens_report$MOVIELENS_DATA_SET_NAME` available from [`r movielens_report$MOVIELENS_DATA_SET_SITE_URL`](`r movielens_report$MOVIELENS_DATA_SET_SITE_URL`), employing the supervised machine learning techniques studied within the *"PH125.8x Data Science: Machine Learning"* course.
 
-## Future work 
+In this work we have first provided an overview of the data set at hand, then summarized the project goal, and listed the execution plan. Next, we have explained the way the data set was prepared and cleaned. Further, we went on with the data analysis that allowed us to summarize seven key observations (*O.I* -- *O.VII*) about the data at hand. In particular, we have discovered that the ratings are affected by the user, movie, and timing effects; and that we do need to employ Regularization to correct for the inaccuracies introduced by the movies and users with a very few ratings.
 
-* Individual lambda tuning for regularized predictors
-* Account for popularity effects
-* Account for genres effects
-* Account for title effects (sequels, spin-offs, key words)
+The literature analysis has revealed that Chapter $33.7$: *"Recommendation systems"* of the **"Introduction to Data Science"** [online book](https://rafalab.github.io/dsbook/) by Rafael A. Irizarry, already provides a statistical model for the movie recommendation system that accounts for the first 5 of the discovered effects (*O.I* -- *O.V*). We have then decided to employ that model as the *Base model* for this work.
 
-???
-* Check for distribution of the training and validation sets
-* Random trees and random forests
-* Some standard models
-* Cross validation on the training set
-* Model ensembles
+Further, we went on with the modeling section and have started it with explaining the *Base model* in details. We have then suggested an *innovative extension* of this model, to account for the timing effect (*O.VI*), and called this new model the *Timing model*. In addition, *another innovation* was suggested, namely to use the individual lambdas for movie and user effects in Regularization. This has resulted in doubling the number of models under study, the additional models were: *Base Ext. model* and *Timing Ext. model*.
+
+All of the suggested models have been implemented (by means of an `R` script), trained (on the specified `edx` set) and validated (on the specified `validation` set). In the process of training, we have also used model cross validation for the sake of Regularization parameter tuning on an independent set of data.
+
+Our experiments with the models at hand have revealed that:
+
+* All of the model have a better `RMSE` scores that the specified `TARGET_RMSE` (`r TARGET_RMSE`).
+* The *Timing model* had the best `RMSE` score (`r tmr$rmse`) of all the models.
+* The effect of the *Ext.* models was inconclusive:
+    * It was shown that tuning individual lambdas improves the `RMSE` score on the `testing` set
+    * A better `testing` set `RMSE` score however did not always imply a better `validation` set `RMSE`
+    
+All in all, the goals of the project have been met, both in regards of beating the `TARGET_RMSE` score and suggesting and innovative statistical models for the movie recommendation system.
+
+## Future work
+In conclusion we shall say that, there are still a number of effects that could be accounted for to further improve our *Timing model*. For instance, we could take into account the movie popularity (*O.VII*), movie genres, and movie title (sequels, spin-offs, key words) effects. Moreover, we have observed that standard statistical models provided with `R` have failed on the MovieLens data set due to its immense size. However, we believe that perhaps a more efficient re-implementation of such models: `LM`, `LOESS`, `randomForest`, and etc. could allow us to improve our recommendation system even further by means of combining them, and the provided *Timing model*, into model ensembles.
