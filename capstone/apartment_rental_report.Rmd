@@ -75,9 +75,9 @@ This sub-selection reduces the number of considered data set columns[^2] from $4
 
 The additional data preparation steps will be described in the *"Data wrangling"* section of this document.
 
-[^1]: Please consider reading *Appendix A* for the complete list of the data set columns.
-[^2]: Please consider reading *Appendix B* for the column descriptions.
-[^3]: Please consider reading the *Project goal* section for an exact goal formulation.
+[^1]: Please consider reading *"Appendix A"* for the complete list of the data set columns.
+[^2]: Please consider reading *"Appendix B"* for the column descriptions.
+[^3]: Please consider reading the *"Project goal"* section for an exact goal formulation.
 
 ## Project goal
 
