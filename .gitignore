@@ -39,3 +39,5 @@ vignettes/*.pdf
 .Renviron
 
 /capstone/ml-10M100K/
+*.csv
+*.rda
