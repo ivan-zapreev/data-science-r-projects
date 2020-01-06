@@ -28,7 +28,7 @@ REGULARIZATION_LAMBDAS <- seq(0, 10, 0.25)
 # Define some constant parameters
 #--------------------------------------------------------------------
 
-AROG_AROG_DATA_FILE_NAME <- "\'Apartment rental offers in Germany\' dataset"
+AROG_DATA_SET_NAME <- "\'Apartment rental offers in Germany\' dataset"
 AROG_DATA_SET_SITE_URL <- "https://www.kaggle.com/corrieaar/apartment-rental-offers-in-germany"
 AROG_DATA_DIR_NAME <- "data"
 AROG_ZIP_FILE_NAME <- "apartment-rental-offers-in-germany.zip"
@@ -41,8 +41,8 @@ AROG_DATA_DIR_PATH <- file.path(".", AROG_DATA_DIR_NAME)
 AROG_DATA_FILE_REL_NAME <- file.path(AROG_DATA_DIR_PATH, AROG_ZIP_FILE_NAME)
 AROG_CSV_FILE_NAME <- "immo_data.csv"
 AROG_CSV_FILE_REL_NAME <- file.path(AROG_DATA_DIR_PATH, AROG_CSV_FILE_NAME)
-AROG_DATA_FILE_NAME <- "apartment_rental_data.rda"
-AROG_REPORT_FILE_NAME <- "apartment_rental_report.rda"
+AROG_DATA_FILE_NAME <- "arog_data.rda"
+AROG_REPORT_FILE_NAME <- "arog_report.rda"
 FIRST_ELEM_SEQ <- 1:5 #This sequence is used for debug printing purposes only
 
 ####################################################################
@@ -111,6 +111,252 @@ ensure_arog_data <- function() {
 }
 
 #--------------------------------------------------------------------
+# This function allows to get a factor column and replace all of its
+# N/A entries and any other entries names (defaults to c("")) in the
+# provided levels_set with a new level (defaults to "unknown")
+#--------------------------------------------------------------------
+map_na_and_others_to_unknown <- function(data_col, levels_set = c(""),
+                                         new_level_name = "unknown") {
+  curr_levels <- levels(data_col)
+  new_data_col <- ifelse(is.na(data_col) | (curr_levels[data_col] %in% levels_set),
+                   new_level_name, curr_levels[data_col]) %>% factor()
+  rm(curr_levels)
+  return(new_data_col)
+}
+
+
+#--------------------------------------------------------------------
+# This function wrangles the data from the original data set
+#--------------------------------------------------------------------
+wrangle_data <- function(selected_arog_data) {
+  #----------------------------------------
+  # totalRent - 15.0% N/A values
+  #----------------------------------------
+  #Remove data with no totalRent values as these
+  #is what we are going to be predicting
+  clean_arog_data <- selected_arog_data %>% 
+    filter(!is.na(totalRent))
+  
+  #--------------------------------------------
+  # 1 N/A entry in the data set per column
+  #----------------------------------------
+  #Remove the marginal NA entries
+  clean_arog_data <- clean_arog_data %>% 
+    filter(!is.na(hasKitchen) & 
+             !is.na(balcony) &
+             !is.na(lift) &
+             !is.na(garden) &
+             !is.na(cellar) &
+             !is.na(livingSpace) &
+             !is.na(noRooms) &
+             !is.na(newlyConst) &
+             !is.na(baseRent))
+  
+  #----------------------------------------
+  # electricityBasePrice - 76.2% N/A values
+  #----------------------------------------
+  #Exclude the electricityBasePrice, as there are
+  #   x <- selected_arog_data %>% filter(!is.na(electricityBasePrice))
+  #   sum(x$electricityBasePrice == 0)
+  #no zero prices for electricity in the data and
+  #the number of N/A values is about 80%
+  clean_arog_data <- clean_arog_data %>%
+    select(-electricityBasePrice)
+  
+  #----------------------------------------
+  # energyEfficiencyClass - 72.3% N/A values
+  #----------------------------------------
+  #The enerty efficiency factor levels are: 
+  #    levels(selected_arog_data$energyEfficiencyClass)
+  # ""               "A"              "A_PLUS"         "B" 
+  # "C"              "D"              "E"             
+  # "F"              "G"              "H"              "NO_INFORMATION"
+  #So set all the N/A and "" energy efficiency levens to "NO_INFORMATION"
+  clean_arog_data$energyEfficiencyClass <- 
+    map_na_and_others_to_unknown(clean_arog_data$energyEfficiencyClass,
+                                 new_level_name = "NO_INFORMATION")
+
+  #----------------------------------------
+  # heatingCosts - 68.2% N/A values
+  #----------------------------------------
+  #Set the heating costs to zero as there are already
+  #    x <- selected_arog_data %>% filter(!is.na(heatingCosts))
+  #    sum(x$heatingCosts == 0)
+  # 1989 zero-valued heating cost entries 
+  clean_arog_data$heatingCosts <- ifelse(is.na(clean_arog_data$heatingCosts),
+                                         0.0, clean_arog_data$heatingCosts)  
+  
+  #----------------------------------------
+  # noParkSpaces - 65.8% N/A values
+  #----------------------------------------
+  #Set the number of parking spaces to zero as there are already
+  #    x <- selected_arog_data %>% filter(!is.na(noParkSpaces))
+  #    sum(x$noParkSpaces == 0)
+  # 2850 zero-valued parking space entries
+  clean_arog_data$noParkSpaces <- ifelse(is.na(clean_arog_data$noParkSpaces),
+                                         0, clean_arog_data$noParkSpaces)
+  
+  
+  #----------------------------------------
+  # interiorQual - 38.8% N/A values
+  #----------------------------------------
+  # Introducing a new "unknown" value factor:
+  #    levels(selected_arog_data$interiorQual)
+  #
+  # "" "luxury" "normal" "simple" "sophisticated"
+  #
+  # and setting the N/A and "" values to "unknown"
+  #    x <- selected_arog_data %>% filter(!is.na(interiorQual))
+  #    sum(x$interiorQual == "")
+  clean_arog_data$interiorQual <- 
+    map_na_and_others_to_unknown(clean_arog_data$interiorQual)
+  
+  #----------------------------------------
+  # numberOfFloors - 36.2% N/A values
+  #----------------------------------------
+  #Set the number of floors to one as there are already
+  #    x <- selected_arog_data %>% filter(!is.na(numberOfFloors))
+  #    sum(x$numberOfFloors == 0)
+  #    sum(x$numberOfFloors == 1)
+  # 2850 zero-valued floor entries, however it is not possible
+  # there shall be at least one floor in the apartment.
+  # E.g. there are 6204 1 floor apartments
+  clean_arog_data$numberOfFloors <- ifelse(is.na(clean_arog_data$numberOfFloors) |
+                                             clean_arog_data$numberOfFloors == 0,
+                                         1, clean_arog_data$numberOfFloors)
+  
+  #----------------------------------------
+  # condition - 25.4% N/A values
+  #----------------------------------------
+  # Introducing a new "unknown" value factor:
+  #    levels(selected_arog_data$condition)
+  #
+  # ""                   "first_time_use" "first_time_use_after_refurbishment"
+  # "fully_renovated"    "mint_condition" "modernized"                        
+  # "need_of_renovation" "negotiable"     "refurbished"                       
+  #
+  # and setting the N/A and "" values to "unknown"
+  #    x <- selected_arog_data %>% filter(!is.na(condition))
+  #    sum(x$condition == "")
+  clean_arog_data$condition <-
+    map_na_and_others_to_unknown(clean_arog_data$condition)
+  
+  #----------------------------------------
+  # yearConstructed - 21.3% N/A values
+  #----------------------------------------
+  # There is no good default to replace the N/A values here
+  # Yet, it is a significant amount of data which we do not
+  # want to exclude. Therefore drop this column from the
+  # analysis and just use the newlyConst flag
+  clean_arog_data <- clean_arog_data %>%
+    select(-yearConstructed)
+  
+  #----------------------------------------
+  # floor - 19.0% N/A values
+  #----------------------------------------
+  # Considering the flat types:
+  #    levels(selected_arog_data$typeOfFlat)
+  # 
+  # ""             "apartment" "ground_floor" "half_basement"       "loft"               
+  # "maisonette"    "other"     "penthouse"   "raised_ground_floor" "roof_storey"        
+  # "terraced_flat"
+  # 
+  # We could assign the N/A values to the ground floor and raised ground floor apartments
+  #    selected_arog_data %>%
+  #       filter(is.na(floor) &
+  #               (typeOfFlat %in% c("ground_floor", "raised_ground_floor"))) %>%
+  #       nrow()
+  #
+  # which is 11166 entries as of 37616:
+  #    sum(is.na(selected_arog_data$floor))
+  # 
+  # So this is why we will just set them all to zero
+  clean_arog_data$floor <- ifelse(is.na(clean_arog_data$floor),
+                                  0, clean_arog_data$floor)
+  
+  #----------------------------------------
+  # heatingType - 16.4% N/A values
+  #----------------------------------------
+  # Introducing a new "unknown" value factor:
+  #    levels(selected_arog_data$heatingType)
+  #
+  # ""                     "central_heating"   "combined_heat_and_power_plant" 
+  # "district_heating"     "electric_heating"  "floor_heating"                 
+  # "gas_heating"          "H"                 "heat_pump"                     
+  # "night_storage_heater" "oil_heating"       "self_contained_central_heating"
+  # "solar_heating"        "stove_heating"     "wood_pellet_heating"
+  #
+  # and setting the N/A, "", and "H" values to "unknown"
+  #    x <- selected_arog_data %>% filter(!is.na(heatingType))
+  #    sum(x$heatingType == "")
+  #    sum(x$heatingType == "H")
+  clean_arog_data$heatingType <-
+    map_na_and_others_to_unknown(
+      clean_arog_data$heatingType,
+      c("","H"))
+  
+  #----------------------------------------
+  # typeOfFlat - 13.9% N/A values
+  #----------------------------------------
+  #First can also set the N/A entries with the negative floor to "half_basement"
+  curr_levels <- levels(clean_arog_data$typeOfFlat)
+  clean_arog_data$typeOfFlat <- ifelse(is.na(clean_arog_data$typeOfFlat) &
+                                         (clean_arog_data$floor < 0),
+                                       "half_basement", curr_levels[clean_arog_data$typeOfFlat]) %>% factor()
+  rm(curr_levels)
+  
+  # Then we consider the factor levels:
+  #    levels(selected_arog_data$typeOfFlat)
+  #
+  # ""             "apartment" "ground_floor" "half_basement"       "loft"               
+  # "maisonette"    "other"     "penthouse"   "raised_ground_floor" "roof_storey"        
+  # "terraced_flat"
+  #
+  # and set the N/A and "" values to "unknown" value, as "other" is known but just not in the list
+  #    x <- selected_arog_data %>% filter(!is.na(typeOfFlat))
+  #    sum(x$typeOfFlat == "")
+  clean_arog_data$typeOfFlat <-
+    map_na_and_others_to_unknown(clean_arog_data$typeOfFlat)
+  
+  #----------------------------------------
+  # serviceCharge - 2.58% N/A values
+  #----------------------------------------
+  #Set the heating costs to zero as there are already
+  #    x <- selected_arog_data %>% filter(!is.na(serviceCharge))
+  #    sum(x$serviceCharge == 0)
+  # 2496 zero-valued heating cost entries 
+  clean_arog_data$serviceCharge <- ifelse(is.na(clean_arog_data$serviceCharge),
+                                         0.0, clean_arog_data$serviceCharge)  
+  
+  #----------------------------------------
+  # typeOfFlat is not consistent with the floors:
+  #----------------------------------------
+  # Consider queries for:
+  #    selected_arog_data %>% filter(typeOfFlat=="raised_ground_floor") %>% pull(floor)
+  #    selected_arog_data %>% filter(typeOfFlat=="ground_floor") %>% pull(floor)
+  # Here we will get the values which are above 0, and we should not, so we need to set them to 0
+  clean_arog_data$floor <- ifelse(clean_arog_data$typeOfFlat %in% 
+                                    c("ground_floor", "raised_ground_floor"),
+                                  0, clean_arog_data$floor)
+  
+  # Consider the query:
+  #
+  #    selected_arog_data %>%
+  #       filter((floor < 0) & !is.na(typeOfFlat) & ! (typeOfFlat %in% c("half_basement", "other"))) %>% 
+  #       pull(typeOfFlat) %>% length()
+  #
+  #    clean_arog_data %>% filter((floor < 0) & ! (typeOfFlat %in% c("half_basement", "other", "unknown"))) %>% nrow()
+  #
+  # Here we see that there are 46 appartments with negative floors which are not
+  # "half_basement", "other", or N/A. We shall just remove them from our data as
+  # this is just 0.02% of the data.
+  clean_arog_data <- clean_arog_data %>%
+    filter(!((floor < 0) & ! (typeOfFlat %in% c("half_basement", "other", "unknown"))))
+  
+  return(clean_arog_data)
+}
+
+#--------------------------------------------------------------------
 # This function is responsible for downloading and pre-processing the 
 # data set. This includes data cleaning and splitting.
 #
@@ -125,18 +371,34 @@ create_arog_data <- function() {
   #Ensure that the AROG data is present
   ensure_arog_data()
 
-  #Read the raw AROG data from the csv file
-  cat("Reading data from", AROG_CSV_FILE_REL_NAME, "\n")
-  raw_arog_data <- read_csv(AROG_CSV_FILE_REL_NAME)
-  raw_arog_data <- as_tibble(raw_arog_data)
-
+  #Read the raw AROG data from the csv file, if it has not being done yet
+  if(!exists("raw_arog_data")){
+    cat("Reading data from", AROG_CSV_FILE_REL_NAME, " into \n")
+    raw_arog_data <- read.csv(AROG_CSV_FILE_REL_NAME)
+    raw_arog_data <- as_tibble(raw_arog_data)
+  }
+  
   #Select the columns of interest
+  selected_arog_data <- raw_arog_data %>%
+    select(hasKitchen, heatingType, balcony, lift,
+           garden, cellar, noParkSpaces, livingSpace,
+           typeOfFlat, noRooms, floor, numberOfFloors,
+           condition, newlyConst, interiorQual,
+           yearConstructed, energyEfficiencyClass,
+           regio1, regio2, regio3,
+           baseRent, electricityBasePrice, 
+           heatingCosts, serviceCharge, totalRent, date)
   
   #Clean and pre-process the data
+  cleaned_arog_data <- wrangle_data(selected_arog_data)
   
   #Split into modeling and validation sets
   
   #Split the modeling set into training and testing sets
+  
+  return(list(raw_data=raw_arog_data,
+              selected_data=selected_arog_data, 
+              cleaned_data=cleaned_arog_data))
 }
 
 #--------------------------------------------------------------------
@@ -153,18 +415,41 @@ create_arog_data <- function() {
 get_arog_data <- function() {
   #Check if the file exists then load the data from the file, 
   #otherwise re-create the data and also save it to the file
-  cat("Checkin if the data is stored in:", AROG_DATA_FILE_NAME,"\n")
   if(!file.exists(AROG_DATA_FILE_NAME)){
-    cat("The data is not stored in", AROG_DATA_FILE_NAME, "start re-generating\n")
+    cat("The", AROG_DATA_FILE_NAME, "file is not present, re-generating\n")
     arog_data <- create_arog_data()
     
-    cat("The data is re-generated, storing it into:", AROG_DATA_FILE_NAME, "\n")
+    cat("The", AROG_DATA_FILE_NAME, "file is re-generated, storing to disk\n")
     save(arog_data, file = AROG_DATA_FILE_NAME)
   } else {
-    cat("The data is stored in", AROG_DATA_FILE_NAME, "and will be loaded\n")
+    cat("The", AROG_DATA_FILE_NAME, "file is present, reading\n")
     load(AROG_DATA_FILE_NAME)
   }
   return(arog_data)
+}
+
+
+#--------------------------------------------------------------------
+# This function creates the initial report to be filled
+#--------------------------------------------------------------------
+init_report_data <- function() {
+  return(list(
+    AROG_CSV_FILE_NAME = AROG_CSV_FILE_NAME,
+    AROG_DATA_SET_NAME = AROG_DATA_SET_NAME,
+    AROG_DATA_SET_SITE_URL = AROG_DATA_SET_SITE_URL,
+    AROG_DATA_SET_FILE_URL = AROG_DATA_SET_FILE_URL,
+    VALIDATION_TO_MODELING_SET_RATIO = VALIDATION_TO_MODELING_SET_RATIO,
+    TEST_TO_TRAIN_SET_RATIO = TEST_TO_TRAIN_SET_RATIO 
+  ))
+}
+
+#--------------------------------------------------------------------
+# This function stores the final report into the 
+#     AROG_REPORT_DATA_FILE_NAME
+# file to be used later from the movielens_report.Rmd script
+#--------------------------------------------------------------------
+store_report_data <- function(arog_report) {
+  save(arog_report, file = AROG_REPORT_FILE_NAME)
 }
 
 ####################################################################
@@ -178,6 +463,8 @@ arog_data <- get_arog_data()
 
 #02 - Initialize the report data frame thay will be storing all
 #     the required information for the report to be generated
-#arog_report <- init_report_data(arog_data)
+arog_report <- init_report_data()
 
+#00 - Store the report into the file to be used from the arog_report.Rmd
+store_report_data(arog_report)
 
