@@ -88,33 +88,59 @@ The additional data preparation steps will be described in the *"Data wrangling"
 
 # Data wrangling
 <!-- A data wrangling section that explains how the data was prepared for data analysis -->
+In this section we present cleaning, restructuring and enriching the raw data taken from the `r arog_report$AROG_DATA_SET_NAME`.
 
-```{r}
-nrow(arog_data$selected_data)
-```
+First, let us note that the number of data entries in the original data set is equal to `r nrow(arog_data$selected_data)`. This data is however not ready to be worked with as it contains multiple `N/A` values and other inconsistencies. For example, the next table summarizes the number of `N/A` values per column:
 
 ```{r, echo=F}
 sel_data_na_cnts <- count_na_entries(arog_data$selected_data)
 
 sel_data_na_cnts%>% print(., n=Inf)
 ```
+As one can see, about $\frac{1}{2}$ of the columns has $10$--$80$% `N/A`$^{s}$, whereas the other half has (almost) no `N/A`$^{s}$.
 
-```{r}
-nrow(arog_data$cleaned_data)
+The remainder of the section will be organized as follows. First we explain how we cleaned the data and solved some of its inconsistencies. Then we provide a summary of the cleaned data set. In the end we explain how we split the entire data set into the `validation` and `modeling` sub-sets[^4].
+
+[^4]:The latter will also be split into the `training` and `testing` set for the sake of model cross-validation.
+
+## Data cleaning
+The data cleaning will be explained in the next steps:
+
+1. We begin with the `totalRent` column as this is the value that we want to predict;
+2. We proceed with the columns with the marginal ($< 1$%) of `N/A` values; 
+3. We cover the remaining columns in the descending order of the number of `N/A` values.
+4. We consider and sole some other data inconsistencies.
+
+```{r, echo = F}
+idx <- which(sel_data_na_cnts[,"Column name"] == "totalRent")
+total_rent_na_percent <- sel_data_na_cnts[idx, "N/A percent"]
+num_marginal_columns <- nrow(filter(sel_data_na_cnts, sel_data_na_cnts[,"N/A percent"] < 1))
 ```
+
+The `totalRent` column contains data that we want to predict. Therefore, the rows with `totalRent` == `N/A` are useless to us and shall be removed. Unfortunately, this will reduce the data set by `r total_rent_na_percent`%. There are also `r num_marginal_columns` columns with a marginal ($0$ to $1$) number of `N/A` values. The latter can be seamlessly removed as even if all of these `N/A`$^{s}$ appear in different rows, we will remove at most `r num_marginal_columns` entries which is `r round(num_marginal_columns/nrow(arog_data$selected_data)*100,4)`% of data.
+
+### The remaining columns
+
+
+
+### Additional issues
+
+## Clean data summary
+Let us now summarize the resulting clean data:
 
 ```{r, echo=F}
 clean_data_na_cnts <- count_na_entries(arog_data$cleaned_data)
-
 clean_data_na_cnts%>% print(., n=Inf)
 ```
 
 ```{r, echo = F}
-total_rent_na_percent <- sel_data_na_cnts[which(sel_data_na_cnts[,"Column name"] == "totalRent"), "N/A percent"]
-selected_wtr <- nrow(arog_data$selected_data) - nrow(arog_data$selected_data)/100*total_rent_na_percent
+na_total_rent_cnt <- round(nrow(arog_data$selected_data)/100*total_rent_na_percent)
+selected_wtr <- nrow(arog_data$selected_data) - na_total_rent_cnt
 ```
 
-`r round(selected_wtr)` $\approx$ `r nrow(arog_data$cleaned_data)`
+As one can notice, the dat set size has been reduced from `r nrow(arog_data$cleaned_data)` to `r  nrow(arog_data$selected_data)`. The major reason for that is excluding the rows with the `N/A` values of the `totalRent` column. Let us recall that the number of such raws was `r total_rent_na_percent`% of the data set, e.g. `r na_total_rent_cnt` rows. It now remains to notice that `r nrow(arog_data$selected_data)` $-$ `r na_total_rent_cnt` $=$ `r selected_wtr` $\approx$ `r nrow(arog_data$cleaned_data)`. The remaining delta is explained by cleaning the `floor`/`typeOfFlat` column inconsistencies.
+
+## Splitting data
 
 # Data analysis
 <!-- A data analysis section that:
