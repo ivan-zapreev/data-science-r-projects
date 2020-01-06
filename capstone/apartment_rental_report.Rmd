@@ -1,0 +1,82 @@
+---
+title: "Apartment Rental Prediction System"
+author: "Dr. Ivan S. Zapreev"
+date: "`r format(Sys.Date())`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+if(!require(knitr)) install.packages("knitr", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+if(!require(graphics)) install.packages("graphics", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(tidyr)) install.packages("tidyr", repos = "http://cran.us.r-project.org")
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyr)
+library(tidyverse)
+library(lubridate)
+library(graphics)
+library(kableExtra)
+
+options(digits=7)
+
+MOVIELENS_DATA_FILE_NAME <- "apartment_rental_data.rda"
+MOVIELENS_REPORT_FILE_NAME <- "apartment_rental_report.rda"
+
+#Load the files
+load(MOVIELENS_DATA_FILE_NAME)
+load(MOVIELENS_REPORT_FILE_NAME)
+```
+
+# Introduction
+<!-- An introduction/overview/executive summary section that:
+ 1. Describes the dataset
+ 2. Summarizes the goal of the project 
+ 3. Outlines the key steps that were performed; -->
+
+
+
+## Dataset overview
+
+
+
+## Project goal
+
+
+
+## Execution plan
+
+
+
+# Data analysis
+<!-- A data analysis section that:
+ 1. Explains the process and techniques used, such as:
+  1.1 Data cleaning
+  1.2 Data exploration
+  1.3 Data visualization
+ 2. Presents insights gained -->
+
+
+
+# Modeling approach
+<!-- A modeling approach section that explains the modeling approach -->
+
+
+
+# Results
+<!-- A results section that:
+ 1. Presents the modeling results 
+ 2. Discusses the model performance -->
+
+
+
+# Conclusions
+<!-- A conclusion section that:
+ 1. Gives a brief summary of the report
+ 2. Explains its limitations
+ 3. Suggests future work -->
+
+
