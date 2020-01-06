@@ -63,49 +63,21 @@ count_na_entries <- function(data_set) {
 
 ## Dataset overview
 
-As stated on the [webpage](`r arog_report$AROG_DATA_SET_SITE_URL`) of the `r arog_report$AROG_DATA_SET_NAME`, it contains `198,379` rental offers scraped from Germany biggest real estate online platform called [ImmobilienScout24](https://www.immobilienscout24.de/). 
+As stated on the [webpage](`r arog_report$AROG_DATA_SET_SITE_URL`) of the `r arog_report$AROG_DATA_SET_NAME`, it contains `198,379` rental offers scraped from the Germany's biggest real estate online platform ß [ImmobilienScout24](https://www.immobilienscout24.de/). 
 
-The data set consists of a single CSV file: `r arog_report$AROG_CSV_FILE_NAME` which contains offers for rental properties only. The data features important rental properties, such as living area size, the rent (both base rent as well as total rent), the location, type of energy, and etc. The `date` column present in the data set defines the time of scraping, done on: *2018-09-22*, *2019-05-10* and *2019-10-08*.
+The data set consists of a single CSV file: *`r arog_report$AROG_CSV_FILE_NAME`* which only contains offers for rental properties. The data features important rental property attributes, such as the living area size, the rent (both base rent as well as total rent), the location, type of energy, and etc. The `date` column present in the data set defines the time of scraping, which was done on three distinct dates: *2018-09-22*, *2019-05-10* and *2019-10-08*.
 
-The complete list of data set columns is as follows:
-
-```{r, echo = F}
-names(arog_data$raw_data)
+The complete list of data set columns is extensive[^1] and thus in this study we will use the following subset:
+```{r, echo=F}
+names(arog_data$selected_data)
 ```
-but not all of them will be used in our study. We shall consider the following sub-selection thereof:
+This sub-selection reduces the number of considered data set columns[^2] from $48$ to $26$ and is motivated by the personal preferences of the report's author and has no scientifically proven motivation. On the contrary, this column selection shall be seen as a part of problem statement. In other words, the task is to build an accurate[^3] rental price prediction model based on the predictors from this set of columns.
 
-1. `hasKitchen` -- has a kitchen
-2. `balcony` -- does the object have a balcony
-3. `cellar` -- has a cellar
-4. `lift` -- is elevator available
-5. `floor` -- which floor is the flat on
-6. `garden` -- has a garden
-7. `noParkSpaces` -- number of parking spaces
-8. `livingSpace` -- living space in sqm
-9. `condition` -- condition of the flat
-10. `interiorQual` -- interior quality
+The additional data preparation steps will be described in the *"Data wrangling"* section of this document.
 
-11. `regio1` --  Bundesland
-12. `regio2` - District or Kreis, same as geo krs
-13. `regio3` -- City/town
-
-14. `noRooms` -- number of rooms
-15. `numberOfFloors` -- number of floors in the building
-16. `typeOfFlat` -- type of flat
-17. `yearConstructed` -- construction year
-18. `newlyConst` -- is the building newly constructed
-19. `heatingType` -- Type of heating
-20. `energyEfficiencyClass` -- energy efficiency class
-
-21. `heatingCosts` -- monthly heating costs in €
-22. `serviceCharge` --  auxiliary costs such as electricity or Internet in €
-23. `electricityBasePrice` -- monthly base price for electricity in €
-24. `baseRent` -- base rent without electricity and heating
-25. `totalRent` -- total rent (usually a sum of base rent, service charge and heating cost)
-
-26. `date` -- time of scraping
-
-Which reduces the number of dataset columns from $48$ to $26$ and is motivated by the personal preferences of the author of this report and thus has no scientific motivation. Moreover, this column selection shall be seen as a part of problem statement. In other words, the task is to build an accurate rental price prediction model based on the predictors from this set of columns. The further data pre-processing steps are described and explained in the *"Data wrangling"* section of this document.
+[^1]: Please consider reading *Appendix A* for the complete list of the data set columns.
+[^2]: Please consider reading *Appendix B* for the column descriptions.
+[^3]: Please consider reading the *Project goal* section for an exact goal formulation.
 
 ## Project goal
 
@@ -169,4 +141,45 @@ selected_wtr <- nrow(arog_data$selected_data) - nrow(arog_data$selected_data)/10
  2. Explains its limitations
  3. Suggests future work -->
 
+# Appendix A: The complete list of data set columns
 
+Hereby we present the list of columns from the original data set:
+
+```{r, echo = F}
+names(arog_data$raw_data)
+```
+
+# Appendix B: Data set column descriptions
+
+Here is the list of the initially considered data set columns with the descriptions thereof:
+
+1. `hasKitchen` -- has a kitchen
+2. `balcony` -- does the object have a balcony
+3. `cellar` -- has a cellar
+4. `lift` -- is elevator available
+5. `floor` -- which floor is the flat on
+6. `garden` -- has a garden
+7. `noParkSpaces` -- number of parking spaces
+8. `livingSpace` -- living space in sqm
+9. `condition` -- condition of the flat
+10. `interiorQual` -- interior quality
+
+11. `regio1` --  Bundesland
+12. `regio2` - District or Kreis, same as geo krs
+13. `regio3` -- City/town
+
+14. `noRooms` -- number of rooms
+15. `numberOfFloors` -- number of floors in the building
+16. `typeOfFlat` -- type of flat
+17. `yearConstructed` -- construction year
+18. `newlyConst` -- is the building newly constructed
+19. `heatingType` -- Type of heating
+20. `energyEfficiencyClass` -- energy efficiency class
+
+21. `heatingCosts` -- monthly heating costs in €
+22. `serviceCharge` --  auxiliary costs such as electricity or Internet in €
+23. `electricityBasePrice` -- monthly base price for electricity in €
+24. `baseRent` -- base rent without electricity and heating
+25. `totalRent` -- total rent (usually a sum of base rent, service charge and heating cost)
+
+26. `date` -- time of scraping
