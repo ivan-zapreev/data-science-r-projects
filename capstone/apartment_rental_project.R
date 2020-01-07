@@ -44,6 +44,8 @@ AROG_CSV_FILE_REL_NAME <- file.path(AROG_DATA_DIR_PATH, AROG_CSV_FILE_NAME)
 AROG_DATA_FILE_NAME <- "arog_data.rda"
 AROG_REPORT_FILE_NAME <- "arog_report.rda"
 FIRST_ELEM_SEQ <- 1:5 #This sequence is used for debug printing purposes only
+MAX_NUM_FLOORS_TO_CONSIDER <- 10 #The limit on the number of floors for filtering
+MAX_FLOOR_TO_CONSIDER <- 100 #The limit on the floor value for filtering
 
 ####################################################################
 # Section to define helper functions
@@ -155,13 +157,14 @@ wrangle_data <- function(selected_arog_data) {
   #----------------------------------------
   # electricityBasePrice - 76.2% N/A values
   #----------------------------------------
-  #Exclude the electricityBasePrice, as there are
+  #Set the electricityBasePrice to zero, as there are
   #   x <- selected_arog_data %>% filter(!is.na(electricityBasePrice))
   #   sum(x$electricityBasePrice == 0)
   #no zero prices for electricity in the data and
   #the number of N/A values is about 80%
-  clean_arog_data <- clean_arog_data %>%
-    select(-electricityBasePrice)
+  clean_arog_data$electricityBasePrice <- 
+    ifelse(is.na(clean_arog_data$electricityBasePrice),
+           0, clean_arog_data$electricityBasePrice)  
   
   #----------------------------------------
   # energyEfficiencyClass - 72.3% N/A values
@@ -214,16 +217,10 @@ wrangle_data <- function(selected_arog_data) {
   #----------------------------------------
   # numberOfFloors - 36.2% N/A values
   #----------------------------------------
-  #Set the number of floors to one as there are already
-  #    x <- selected_arog_data %>% filter(!is.na(numberOfFloors))
-  #    sum(x$numberOfFloors == 0)
-  #    sum(x$numberOfFloors == 1)
-  # 2850 zero-valued floor entries, however it is not possible
-  # there shall be at least one floor in the apartment.
-  # E.g. there are 6204 1 floor apartments
-  clean_arog_data$numberOfFloors <- ifelse(is.na(clean_arog_data$numberOfFloors) |
-                                             clean_arog_data$numberOfFloors == 0,
-                                         1, clean_arog_data$numberOfFloors)
+  # This column is too polluted, see the bar plots per
+  # typeOfFlat type. There is too much noize and bias.
+  clean_arog_data <- clean_arog_data %>% 
+    select(-numberOfFloors)
   
   #----------------------------------------
   # condition - 25.4% N/A values
@@ -244,7 +241,7 @@ wrangle_data <- function(selected_arog_data) {
   #----------------------------------------
   # yearConstructed - 21.3% N/A values
   #----------------------------------------
-  # There is no good default to replace the N/A values here
+  # There is no good default to replace the N/A values here.
   # Yet, it is a significant amount of data which we do not
   # want to exclude. Therefore drop this column from the
   # analysis and just use the newlyConst flag
@@ -254,25 +251,33 @@ wrangle_data <- function(selected_arog_data) {
   #----------------------------------------
   # floor - 19.0% N/A values
   #----------------------------------------
-  # Considering the flat types:
-  #    levels(selected_arog_data$typeOfFlat)
-  # 
-  # ""             "apartment" "ground_floor" "half_basement"       "loft"               
-  # "maisonette"    "other"     "penthouse"   "raised_ground_floor" "roof_storey"        
-  # "terraced_flat"
-  # 
-  # We could assign the N/A values to the ground floor and raised ground floor apartments
-  #    selected_arog_data %>%
-  #       filter(is.na(floor) &
-  #               (typeOfFlat %in% c("ground_floor", "raised_ground_floor"))) %>%
-  #       nrow()
-  #
-  # which is 11166 entries as of 37616:
-  #    sum(is.na(selected_arog_data$floor))
-  # 
-  # So this is why we will just set them all to zero
-  clean_arog_data$floor <- ifelse(is.na(clean_arog_data$floor),
-                                  0, clean_arog_data$floor)
+  #Set the floor values for "ground_floor" and "raised_ground_floor"
+  clean_arog_data$floor <- ifelse(is.na(clean_arog_data$heatingCosts) &
+                                  !is.na(clean_arog_data$typeOfFlat) &
+                                    (clean_arog_data$typeOfFlat %in%
+                                       c("ground_floor", "raised_ground_floor")),
+                                         0, clean_arog_data$floor)  
+  #Set the floor values for "half_basement"
+  clean_arog_data$floor <- ifelse(is.na(clean_arog_data$heatingCosts) &
+                                  !is.na(clean_arog_data$typeOfFlat) &
+                                    (clean_arog_data$typeOfFlat == "half_basement"),
+                                  -1, clean_arog_data$floor)  
+  
+  #Assign the remaining N/A floors to the mean values in the category
+  flat_types <- levels(clean_arog_data$typeOfFlat)
+  flat_types <- setdiff(flat_types, c("ground_floor", "raised_ground_floor", "half_basement"))
+  for(ft in flat_types) {
+    #Compute the mean value
+    mean_ft_val <- clean_arog_data %>% 
+      filter(!is.na(floor) & (typeOfFlat == ft) & 
+               ( floor <= arog_report$MAX_FLOOR_TO_CONSIDER)) %>%
+      pull(floor) %>% mean()
+    #Set the mean value
+    clean_arog_data$floor <- ifelse(is.na(clean_arog_data$floor) &
+                                      (clean_arog_data$typeOfFlat == ft),
+                                    mean_ft_val, clean_arog_data$floor)
+  }
+  rm(mean_ft_val, flat_types)
   
   #----------------------------------------
   # heatingType - 16.4% N/A values
@@ -298,13 +303,6 @@ wrangle_data <- function(selected_arog_data) {
   #----------------------------------------
   # typeOfFlat - 13.9% N/A values
   #----------------------------------------
-  #First can also set the N/A entries with the negative floor to "half_basement"
-  curr_levels <- levels(clean_arog_data$typeOfFlat)
-  clean_arog_data$typeOfFlat <- ifelse(is.na(clean_arog_data$typeOfFlat) &
-                                         (clean_arog_data$floor < 0),
-                                       "half_basement", curr_levels[clean_arog_data$typeOfFlat]) %>% factor()
-  rm(curr_levels)
-  
   # Then we consider the factor levels:
   #    levels(selected_arog_data$typeOfFlat)
   #
@@ -331,13 +329,31 @@ wrangle_data <- function(selected_arog_data) {
   #----------------------------------------
   # typeOfFlat is not consistent with the floors:
   #----------------------------------------
-  # Consider queries for:
-  #    selected_arog_data %>% filter(typeOfFlat=="raised_ground_floor") %>% pull(floor)
-  #    selected_arog_data %>% filter(typeOfFlat=="ground_floor") %>% pull(floor)
-  # Here we will get the values which are above 0, and we should not, so we need to set them to 0
+  # Making the floor values consistent for the aparent cases:
+  # * Re-setting the number of floors:
+  #   * `half_basement` --`floor = -1`
+  # * `ground_floor` -- `floor = 0`
+  # * `raised_ground_floor` --`floor = 0`
   clean_arog_data$floor <- ifelse(clean_arog_data$typeOfFlat %in% 
                                     c("ground_floor", "raised_ground_floor"),
                                   0, clean_arog_data$floor)
+  clean_arog_data$floor <- ifelse(clean_arog_data$typeOfFlat == "half_basement",
+                                  1, clean_arog_data$floor)
+  
+  
+  #----------------------------------------
+  #Filter out the apartments which are too high
+  #----------------------------------------
+  clean_arog_data <- clean_arog_data %>%
+    filter( floor <= arog_report$MAX_FLOOR_TO_CONSIDER )
+  
+  #----------------------------------------
+  #Filter out the apartments for which the number of floors is too high
+  #----------------------------------------
+  # IS NOT NEEDED: The column is already dropped!
+  #clean_arog_data <- clean_arog_data %>%
+  #  filter( numberOfFloors <= arog_report$MAX_NUM_FLOORS_TO_CONSIDER )
+  
   
   # Consider the query:
   #
@@ -439,7 +455,9 @@ init_report_data <- function() {
     AROG_DATA_SET_SITE_URL = AROG_DATA_SET_SITE_URL,
     AROG_DATA_SET_FILE_URL = AROG_DATA_SET_FILE_URL,
     VALIDATION_TO_MODELING_SET_RATIO = VALIDATION_TO_MODELING_SET_RATIO,
-    TEST_TO_TRAIN_SET_RATIO = TEST_TO_TRAIN_SET_RATIO 
+    TEST_TO_TRAIN_SET_RATIO = TEST_TO_TRAIN_SET_RATIO, 
+    MAX_NUM_FLOORS_TO_CONSIDER = MAX_NUM_FLOORS_TO_CONSIDER,
+    MAX_FLOOR_TO_CONSIDER = MAX_FLOOR_TO_CONSIDER
   ))
 }
 

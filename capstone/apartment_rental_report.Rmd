@@ -3,6 +3,8 @@ title: "Apartment Rental Prediction System"
 author: "Dr. Ivan S. Zapreev"
 date: "`r format(Sys.Date())`"
 output: pdf_document
+number_sections: true
+toc: true
 ---
 
 ```{r setup, include=FALSE}
@@ -12,6 +14,7 @@ if(!require(graphics)) install.packages("graphics", repos = "http://cran.us.r-pr
 if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(tidyr)) install.packages("tidyr", repos = "http://cran.us.r-project.org")
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
 
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -21,6 +24,7 @@ library(lubridate)
 library(graphics)
 library(kableExtra)
 library(dslabs)
+library(dplyr)
 
 options(digits=7)
 
@@ -51,6 +55,30 @@ count_na_entries <- function(data_set) {
     arrange(desc(count))
   names(result) <- c("Column name", "N/A count", "N/A percent")
   return(result)
+}
+
+#--------------------------------------------------------------------
+# This function is used to make the number of floors summary for an
+# apartment types. It accepts an apartment type and a data set, which
+# defaults to arog_data$selected_data, and then returns a tibble, with 
+# the following data for the flats of the app_type type:
+#    app_type - apartment type
+#    count - the number of non N/A numberOfFloors
+#    avg - average of numberOfFloors values
+#    se - standard error of numberOfFloors values
+#    min - min numberOfFloors value
+#    max - max numberOfFloors value
+#--------------------------------------------------------------------
+nr_floors_summary <- function(app_type, data_set = arog_data$selected_data) {
+  df <- data_set %>%
+    filter(!is.na(numberOfFloors) & (typeOfFlat == app_type)) %>% 
+    summarise(app_type = app_type,
+              count = n(),
+              avg = round(mean(numberOfFloors), 1), 
+              se = round(sd(numberOfFloors), 1),
+              min = min(numberOfFloors),
+              max = max(numberOfFloors))
+  return(as_tibble(df))
 }
 ```
 
@@ -94,7 +122,6 @@ First, let us note that the number of data entries in the original data set is e
 
 ```{r, echo=F}
 sel_data_na_cnts <- count_na_entries(arog_data$selected_data)
-
 sel_data_na_cnts%>% print(., n=Inf)
 ```
 As one can see, about $\frac{1}{2}$ of the columns has $10$--$80$% `N/A`$^{s}$, whereas the other half has (almost) no `N/A`$^{s}$.
@@ -111,19 +138,164 @@ The data cleaning will be explained in the next steps:
 3. We cover the remaining columns in the descending order of the number of `N/A` values.
 4. We consider and sole some other data inconsistencies.
 
+### Initial steps
+
 ```{r, echo = F}
 idx <- which(sel_data_na_cnts[,"Column name"] == "totalRent")
 total_rent_na_percent <- sel_data_na_cnts[idx, "N/A percent"]
 num_marginal_columns <- nrow(filter(sel_data_na_cnts, sel_data_na_cnts[,"N/A percent"] < 1))
 ```
 
-The `totalRent` column contains data that we want to predict. Therefore, the rows with `totalRent` == `N/A` are useless to us and shall be removed. Unfortunately, this will reduce the data set by `r total_rent_na_percent`%. There are also `r num_marginal_columns` columns with a marginal ($0$ to $1$) number of `N/A` values. The latter can be seamlessly removed as even if all of these `N/A`$^{s}$ appear in different rows, we will remove at most `r num_marginal_columns` entries which is `r round(num_marginal_columns/nrow(arog_data$selected_data)*100,4)`% of data.
+The `totalRent` column contains data that we want to predict. Therefore, the rows with `totalRent` == `N/A` are useless to us and shall be removed. Unfortunately, this will reduce the data set by `r total_rent_na_percent`%. There are also `r num_marginal_columns` columns with a marginal ($0$ to $1$) number of `N/A` values. The latter can be seamlessly removed as even if all of these `N/A`$^{s}$ appear in different rows, we will remove at most `r num_marginal_columns` entries which is just `r round(num_marginal_columns/nrow(arog_data$selected_data)*100,4)`% of data.
 
-### The remaining columns
+### The main columns
+Let us consider the columns one by one. Note that, some modifications we will do to the data to remove the `N/A` values  may introduce bias. To for test that we would need a clean data set with no `N/A` values initially present and then to use such a data set for the trained model(s) validation. Due to the lack of time this will not be done in the case study.
 
+#### Column: `electricityBasePrice` - $76.2$% `N/A` values
+We will set the electricity base price for the `N/A` values to zero. The motivation is that, since the number of `N/A` values is almost $80$% and no other zero values are present:
+```{r}
+x <- arog_data$selected_data %>% filter(!is.na(electricityBasePrice))
+sum(x$electricityBasePrice == 0)
+```
+it is likely that the `N/A` values were used to determine the fact that there is no electricity base price.
 
+#### Column: `energyEfficiencyClass` - $72.3$% `N/A` values
+The energy efficiency factor levels are: 
+```{r}
+levels(arog_data$selected_data$energyEfficiencyClass)
+```
+So we shall naturally set all the `N/A` and `""` energy efficiency levels to `"NO_INFORMATION"`.
 
-### Additional issues
+#### Column: `heatingCosts` - $68.2$% `N/A` values
+```{r, echo = F}
+x <- arog_data$selected_data %>% filter(!is.na(heatingCosts))
+num_zero_val <- sum(x$heatingCosts == 0)
+```
+We will set the heating costs for the `N/A` values to zero as there are already  `r num_zero_val` zero-valued heating cost entries. It is unlikely that there are non-heated accommodations in Germany so *we assume that the $0$ values, the same as `N/A`$^{s}$ mean - "unknown"*.
+
+#### Column: `noParkSpaces` - $65.8$% `N/A` values
+```{r, echo = F}
+x <- arog_data$selected_data %>% filter(!is.na(noParkSpaces))
+num_zero_val <- sum(x$noParkSpaces == 0)
+```
+We will set the number of parking places for the `N/A` values to zero as there is already `r num_zero_val` zero-valued entries. By this step we assume that, `N/A` is interpreted as *"not applicable"* or *"no are available"*.
+
+#### Column: `interiorQual` - $38.8$% `N/A` values
+The interior quality factor levels are: 
+```{r}
+levels(arog_data$selected_data$interiorQual)
+```
+So we shall introduce a new level for the `N/A` and `""` values, called `"unknown"`.
+
+#### Column: `numberOfFloors` - $36.2$% `N/A` values
+```{r, echo = F}
+type_of_flat_levels <- levels(arog_data$selected_data$typeOfFlat)
+list_of_nof_sum <- sapply(type_of_flat_levels, nr_floors_summary)
+nof_sum_df <- as_tibble(t(list_of_nof_sum)) %>% arrange(desc(as.numeric(count)))
+nof_sum_df[which(nof_sum_df$app_type==""), ]$app_type <- '""'
+```
+Setting the `N/A` values for the floors shall be agreed with the apartment type, if we gather some number of floors statistics for each available apartment type we get the following:
+
+```{r, echo = F}
+kable(nof_sum_df, caption = "Type of flat vs. number of floors statistics",
+      col.names = c("typeOfFlat", "Count", "Average", "Standard error", "Minimum", "Maximum"),
+      escape = TRUE, align=rep('c', 4)) %>%
+  add_header_above(c(" " = 1, "numberOfFloors" = 5)) %>%
+  kable_styling(latex_options =c("striped", "HOLD_position"))
+```
+From where we conclude that the data we have is very polluted. Clearly, one can not expect apartments with $99$ floors and alike. See also on the large average (all  `+/-` around $3$ floors) and the huge standard error values. If we visualize the results (filtering out `r sum(arog_data$selected_data$numberOfFloors > arog_report$MAX_NUM_FLOORS_TO_CONSIDER, na.rm = TRUE)` flats with more than `r arog_report$MAX_NUM_FLOORS_TO_CONSIDER` floors), we see that:
+
+```{r, echo = F}
+arog_data$selected_data %>%
+  filter(!is.na(numberOfFloors) & !is.na(typeOfFlat) &
+           (numberOfFloors <= arog_report$MAX_NUM_FLOORS_TO_CONSIDER)) %>%
+  group_by(typeOfFlat) %>%
+  ggplot() +
+    geom_bar(aes(numberOfFloors)) +
+    scale_y_log10() +
+    facet_wrap(~typeOfFlat, nrow=3)
+```
+The data seems to be normally distributed (except for the `apartment` type) with the mean values within $2.5$ - $4.0$ range. This makes us believe that this data is too much biased and polluted. So we will not rely on this column in our analysis.
+
+#### Column: `condition` - $25.4$% `N/A` values
+The condition factor levels are: 
+```{r, echo = F}
+levels(arog_data$selected_data$condition)
+```
+So we shall introduce a new level for the `N/A` and `""` values, called `"unknown"`.
+
+#### Column: `yearConstructed` - $21.3$% `N/A` values
+There is no good default to replace the `N/A` values here. Yet, it is a significant amount of data which we do not want to exclude. Therefore drop this column from the analysis and just use the `newlyConst` flag column.
+
+#### Column: `floor` - $19.0$% `N/A` values
+We could assign some `floor` values based on the flat types:
+```{r, echo = F}
+levels(arog_data$selected_data$typeOfFlat)
+```
+For example, we could consider assigning:
+
+* `half_basement` -- the average `floor` for the half-basement
+* `ground_floor` -- `floor = 0`
+* `raised_ground_floor` -- the average `floor` for the raised ground floor
+
+but, let us look at the floor values (filtering out `r sum(arog_data$selected_data$floor > arog_report$MAX_FLOOR_TO_CONSIDER, na.rm = TRUE)` flats higher that at the `r arog_report$MAX_FLOOR_TO_CONSIDER`'th floor), for these flat types:
+```{r, echo = F}
+arog_data$selected_data %>%
+  filter(!is.na(floor) & !is.na(typeOfFlat) & (floor <= arog_report$MAX_FLOOR_TO_CONSIDER) &
+           (typeOfFlat %in% c("half_basement", "ground_floor", "raised_ground_floor"))) %>%
+  group_by(typeOfFlat) %>%
+  ggplot() +
+    geom_bar(aes(floor)) +
+    scale_y_log10() +
+    facet_wrap(~typeOfFlat, nrow=3)
+```
+From the data above we see that we shall not only correct the `N/A` values but set all of the floor values for the considered flat types as follows:
+
+* `half_basement` --`floor = -1`
+* `ground_floor` -- `floor = 0`
+* `raised_ground_floor` --`floor = 0`
+
+```{r, echo = F}
+num_rem_na_floors <- arog_data$selected_data %>%
+  filter(is.na(floor) & !is.na(typeOfFlat) &
+           !(typeOfFlat %in% c("half_basement", "ground_floor", "raised_ground_floor"))) %>%
+  nrow()
+```
+
+If we do that then there will still be `r num_rem_na_floors` (`r round(num_rem_na_floors*100/nrow(arog_data$selected_data), 1)`% of data) `N/A` floor values for the flat types for which we can not give any exact value. So we will just assign those to the mean floor value in the category.
+
+#### Column: `heatingType` - $16.4$% `N/A` values
+The heating type factor levels are: 
+```{r, echo = F}
+levels(arog_data$selected_data$heatingType)
+```
+So we shall introduce a new level for the `N/A`, `""`, and `"H"` values, called `"unknown"`.
+
+#### Column: `typeOfFlat` - $13.9$% `N/A` values
+The type of flat factor levels are: 
+```{r, echo = F}
+levels(arog_data$selected_data$typeOfFlat)
+```
+So we shall introduce a new level for the `N/A` and `""` values, called `"unknown"`. Note that, we do not use the pre-defined level `"other"` here as we interpret it as known flat type which is just not on the list of available choices.
+
+#### Column `serviceCharge` - $2.58$% `N/A` values
+We will set the service charges for the `N/A` values to zero. The motivation is that, there are:
+```{r}
+x <- arog_data$selected_data %>% filter(!is.na(serviceCharge))
+sum(x$serviceCharge == 0)
+```
+zero values present, so we interpret the `N/A` values as defining the fact of no additional service charges.
+
+### Additional steps
+In addition to the data alternations done above we have also done the following:
+
+* Re-setting the number of floors:
+    * `half_basement` --`floor` $= -1$
+    * `ground_floor` -- `floor` $= 0$
+    * `raised_ground_floor` --`floor` $= 0$
+* Filter out flats:
+    * With `floor` $>$ `r arog_report$MAX_FLOOR_TO_CONSIDER`
+    * Other than `"half_basement"`, `"other"`, and `"unknown"`; but with `floor` < $0$ 
 
 ## Clean data summary
 Let us now summarize the resulting clean data:
@@ -134,13 +306,19 @@ clean_data_na_cnts%>% print(., n=Inf)
 ```
 
 ```{r, echo = F}
-na_total_rent_cnt <- round(nrow(arog_data$selected_data)/100*total_rent_na_percent)
+selected_data_row_cnt <- nrow(arog_data$selected_data)
+cleaned_data_row_cnt <- nrow(arog_data$cleaned_data)
+na_total_rent_cnt <- round(selected_data_row_cnt/100*total_rent_na_percent)
 selected_wtr <- nrow(arog_data$selected_data) - na_total_rent_cnt
 ```
 
-As one can notice, the dat set size has been reduced from `r nrow(arog_data$cleaned_data)` to `r  nrow(arog_data$selected_data)`. The major reason for that is excluding the rows with the `N/A` values of the `totalRent` column. Let us recall that the number of such raws was `r total_rent_na_percent`% of the data set, e.g. `r na_total_rent_cnt` rows. It now remains to notice that `r nrow(arog_data$selected_data)` $-$ `r na_total_rent_cnt` $=$ `r selected_wtr` $\approx$ `r nrow(arog_data$cleaned_data)`. The remaining delta is explained by cleaning the `floor`/`typeOfFlat` column inconsistencies.
+As one can notice, the dat set size has been reduced from `r  nrow(arog_data$selected_data)` to `r cleaned_data_row_cnt` . The major reason for that is excluding the rows with the `N/A` values of the `totalRent` column. Let us recall that the number of such raws was `r total_rent_na_percent`% of the data set, e.g. `r na_total_rent_cnt` rows. It now remains to notice that `r nrow(arog_data$selected_data)` $-$ `r na_total_rent_cnt` $=$ `r selected_wtr` $\approx$ `r cleaned_data_row_cnt`. The remaining `r round( (selected_wtr - cleaned_data_row_cnt)*100/selected_data_row_cnt, 1)`% delta is explained by cleaning the `floor`/`typeOfFlat` columns and etc.
+
+The data has been cleaned but we can expect that there is some noise in the data which we have not addressed. We might get more insights into the quality of data at hand when we perform data analysis in the subsequent sections.
 
 ## Splitting data
+
+
 
 # Data analysis
 <!-- A data analysis section that:
@@ -166,6 +344,10 @@ As one can notice, the dat set size has been reduced from `r nrow(arog_data$clea
  1. Gives a brief summary of the report
  2. Explains its limitations
  3. Suggests future work -->
+ 
+## Future work
+
+Check for introducing any bias by data wrangling.
 
 # Appendix A: The complete list of data set columns
 
