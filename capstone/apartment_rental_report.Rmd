@@ -113,12 +113,32 @@ The additional data preparation steps will be described in the *"Data wrangling"
 
 ## Execution plan
 
+Let us now briefly outline the main steps to be performed to reach the previously formalized project goal:
+
+1. **Prepare the data** -- see the *"Data wrangling"* section:
+    + Select, clean, and reshape relevant data; split it into training and validation sets; and etc.
+2. **Analyze the dataset** -- see the *"Dataset analysis"* section:
+    + Perform data exploration and visualization; summarize insights on the data.
+3. **Describe the modeling approach** -- see the *"Modeling approach"* section:
+    + Consider the insights of the data analysis; suggest the way for building the prediction model.
+4. **Present modeling results** -- see the  *"Results"* section:
+    + Train the model on the `modeling` set; analyze the training results; evaluate on the `validation` set.
+5. **Provide concluding remarks** -- see the *"Conclusions"* section:
+    + Summarize the results; mention any approach limitations; outline possible future improvements.
 
 # Data wrangling
 <!-- A data wrangling section that explains how the data was prepared for data analysis -->
-In this section we present cleaning, restructuring and enriching the raw data taken from the `r arog_report$AROG_DATA_SET_NAME`.
+In this section we present cleaning, enriching, and restructuring the raw data taken from the `r arog_report$AROG_DATA_SET_NAME`.
 
-First, let us note that the number of data entries in the original data set is equal to `r nrow(arog_data$selected_data)`. This data is however not ready to be worked with as it contains multiple `N/A` values and other inconsistencies. For example, the next table summarizes the number of `N/A` values per column:
+This section will be organized as follows: First we explain how we cleaned the data and solved some of its inconsistencies, by enriching the data. Then we identify some structural changes done to the data. Further, we
+provide a summary of the wrangled data set. In the end, we explain how we split the entire data set into the `validation` and `modeling` sub-sets[^4].
+
+[^4]:The latter will also be split into the `training` and `testing` set for the sake of model cross-validation.
+
+## Data cleaning & enriching
+Let us note that the number of data entries in the original data set is equal to `r nrow(arog_data$selected_data)`. This data is however not ready to be worked with as, for instance, it contains multiple `N/A` values and there are also other inconsistencies present.
+
+Consider the next table summarizing the number of `N/A` values per data set column:
 
 ```{r, echo=F}
 sel_data_na_cnts <- count_na_entries(arog_data$selected_data)
@@ -126,19 +146,14 @@ sel_data_na_cnts%>% print(., n=Inf)
 ```
 As one can see, about $\frac{1}{2}$ of the columns has $10$--$80$% `N/A`$^{s}$, whereas the other half has (almost) no `N/A`$^{s}$.
 
-The remainder of the section will be organized as follows. First we explain how we cleaned the data and solved some of its inconsistencies. Then we provide a summary of the cleaned data set. In the end we explain how we split the entire data set into the `validation` and `modeling` sub-sets[^4].
-
-[^4]:The latter will also be split into the `training` and `testing` set for the sake of model cross-validation.
-
-## Data cleaning
-The data cleaning will be explained in the next steps:
+The data cleaning and enriching will be explained in the next steps:
 
 1. We begin with the `totalRent` column as this is the value that we want to predict;
 2. We proceed with the columns with the marginal ($< 1$%) of `N/A` values; 
 3. We cover the remaining columns in the descending order of the number of `N/A` values.
 4. We consider and sole some other data inconsistencies.
 
-### Initial steps
+### The first steps
 
 ```{r, echo = F}
 idx <- which(sel_data_na_cnts[,"Column name"] == "totalRent")
@@ -297,28 +312,80 @@ In addition to the data alternations done above we have also done the following:
     * With `floor` $>$ `r arog_report$MAX_FLOOR_TO_CONSIDER`
     * Other than `"half_basement"`, `"other"`, and `"unknown"`; but with `floor` < $0$ 
 
-## Clean data summary
+## Restructuring data
+
+There data set at hand does not have any complex structure. However, because we want to be able to do predictions per city and avoid cities with the same names within different lands and regions we shall combine the `regio` columns into a new single one, as follows:
+```{r, eval =F}
+  clean_arog_data <- clean_arog_data %>% 
+    unite("location", c("regio1", "regio2", "regio3"), remove=FALSE) %>%
+    select(-regio1, -regio2, -regio3)
+```
+The resulting columns have values constructed according to the following pattern:
+```
+location = regio1 + "_" + regio2 + "_" + regio3
+```
+For example:
+```{r}
+arog_data$wrangled_data$location[1:5]
+```
+
+## Wrangled data set
 Let us now summarize the resulting clean data:
 
 ```{r, echo=F}
-clean_data_na_cnts <- count_na_entries(arog_data$cleaned_data)
+clean_data_na_cnts <- count_na_entries(arog_data$wrangled_data)
 clean_data_na_cnts%>% print(., n=Inf)
 ```
 
 ```{r, echo = F}
 selected_data_row_cnt <- nrow(arog_data$selected_data)
-cleaned_data_row_cnt <- nrow(arog_data$cleaned_data)
+cleaned_data_row_cnt <- nrow(arog_data$wrangled_data)
 na_total_rent_cnt <- round(selected_data_row_cnt/100*total_rent_na_percent)
 selected_wtr <- nrow(arog_data$selected_data) - na_total_rent_cnt
 ```
 
 As one can notice, the dat set size has been reduced from `r  nrow(arog_data$selected_data)` to `r cleaned_data_row_cnt` . The major reason for that is excluding the rows with the `N/A` values of the `totalRent` column. Let us recall that the number of such raws was `r total_rent_na_percent`% of the data set, e.g. `r na_total_rent_cnt` rows. It now remains to notice that `r nrow(arog_data$selected_data)` $-$ `r na_total_rent_cnt` $=$ `r selected_wtr` $\approx$ `r cleaned_data_row_cnt`. The remaining `r round( (selected_wtr - cleaned_data_row_cnt)*100/selected_data_row_cnt, 1)`% delta is explained by cleaning the `floor`/`typeOfFlat` columns and etc.
 
-The data has been cleaned but we can expect that there is some noise in the data which we have not addressed. We might get more insights into the quality of data at hand when we perform data analysis in the subsequent sections.
+The data has been cleaned but we can expect that there is some noise in the data which we have not addressed. We might get more data-quality insights when we perform data analysis in the subsequent sections.
 
 ## Splitting data
 
+To facilitate supervised learning, the wrangled data is split into the `modeling`, `r (1-arog_report$VALIDATION_TO_MODELING_SET_RATIO)*100`% of data, and `validation`, `r arog_report$VALIDATION_TO_MODELING_SET_RATIO*100`% of data, sets. The former will be used for training statistical model(s) and the latter for the model(s) validation. Note that, for the sake of subsequent cross validation during modeling part, we further split the `modeling` set into the `training`, `r (1-arog_report$TEST_TO_TRAIN_SET_RATIO)*100`% thereof, and `testing`, `r arog_report$TEST_TO_TRAIN_SET_RATIO*100`% thereof, sets.
 
+We split the data in the following steps:
+
+1. The data is randomly split into to parts according to the specified ratio:
+```{r, eval = F}
+  test_index <- createDataPartition(y = data_set$totalRent, times = 1, 
+                                    p = ratio, list = FALSE)
+```
+2. The `test_index` rows are the candidates for the `testing`/`validation` set rows
+3. The factorized column values of the `testing`/`validation` set are considered:
+```{r}
+str_data <- capture.output(str(arog_data$wrangled_data))
+str_replace_all(str_subset(str_data, "Factor"), "\",..:.*","\",..")
+```
+4. The rows with the values not present in the `testing`/`modeling` set are dropped 
+5. The `testing`/`modeling` set consists of rows absent in the `testing`/`validation` set
+
+The procedure above ensures that the `testing`/`validation` set can always be evaluated on a model trained on the `testing`/`modeling` set. For more details, see the `create_arog_data` and `split_train_test_sets` functions located in the `apartment_rental_project.R` script.
+
+The resulting set sizes are as follows:
+```{r, echo = F}
+total_data_size <- nrow(arog_data$wrangled_data)
+train_set_size <- nrow(arog_data$training_data)
+test_set_size <- nrow(arog_data$testing_data)
+model_set_size <- train_set_size + test_set_size
+valid_set_size <- nrow(arog_data$validation)
+```
+* `modeling` -- `r model_set_size` rows, `r round(model_set_size*100/total_data_size, 1)`% of data
+    * `training` -- `r train_set_size` rows, `r round(train_set_size*100/model_set_size, 1)`% of `modeling` set
+    * `testing` -- `r test_set_size` rows, `r round(test_set_size*100/model_set_size, 1)`% of `modeling` set
+* `validation` -- `r valid_set_size` rows, `r round(valid_set_size*100/total_data_size, 1)`% of data
+
+As expected, due to returning `testing`/`validation` set rows to the `testing`/`modeling` set for consistency, the desired set ratios are biased. The `validation` set size is almost as prescribed (`r arog_report$VALIDATION_TO_MODELING_SET_RATIO*100`% of data), but the `testing` set size is affected more significantly[^6]. Yet, we see no issue as the `testing` set is still $> 10$% of the `modeling` set, which should be enough for performing cross validation.
+
+[^6]: The requested `testing` set size was `r arog_report$TEST_TO_TRAIN_SET_RATIO*100`% of the `modeling` set.
 
 # Data analysis
 <!-- A data analysis section that:

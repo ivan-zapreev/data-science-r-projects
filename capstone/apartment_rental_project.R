@@ -355,21 +355,83 @@ wrangle_data <- function(selected_arog_data) {
   #  filter( numberOfFloors <= arog_report$MAX_NUM_FLOORS_TO_CONSIDER )
   
   
-  # Consider the query:
-  #
-  #    selected_arog_data %>%
-  #       filter((floor < 0) & !is.na(typeOfFlat) & ! (typeOfFlat %in% c("half_basement", "other"))) %>% 
-  #       pull(typeOfFlat) %>% length()
-  #
-  #    clean_arog_data %>% filter((floor < 0) & ! (typeOfFlat %in% c("half_basement", "other", "unknown"))) %>% nrow()
-  #
+  #----------------------------------------
+  # Flats with negative floor values
+  #----------------------------------------
   # Here we see that there are 46 appartments with negative floors which are not
-  # "half_basement", "other", or N/A. We shall just remove them from our data as
-  # this is just 0.02% of the data.
+  # "half_basement", "other", or N/A ("unknown"). We shall just remove them from
+  # our data as this is just 0.02% of the data.
   clean_arog_data <- clean_arog_data %>%
     filter(!((floor < 0) & ! (typeOfFlat %in% c("half_basement", "other", "unknown"))))
   
+  #----------------------------------------
+  # Combining the regio columns
+  #----------------------------------------
+  #Because we want to be able to do predicitons per 
+  #city and avoind cities with the same names within 
+  #different lands and regions we shall combine the
+  #regio columnss into a new single one
+  clean_arog_data <- clean_arog_data %>% 
+    unite("location", c("regio1", "regio2", "regio3"), remove=FALSE) %>%
+    select(-regio1, -regio2, -regio3)
+  
   return(clean_arog_data)
+}
+
+#--------------------------------------------------------------------
+# This function splits the data set into the training and testing parts:
+#    data_set - the dat set to be split
+#    ratio - the ratio to be used, the % to be used for testing
+# Returns a list with the following attributes:
+#    tratin_set - the training set
+#    test_set - the testing set
+# The function makes sure that the test set does not contain movies 
+# and users not present in the training set
+#--------------------------------------------------------------------
+split_train_test_sets <- function(data_set, ratio) {
+  #Before splitting the data set into the training and
+  #testing parts set the random seed to keep the behavior
+  #stable during the development phase, may be removed later
+  set.seed(1)
+
+  cat("Splitting the data set into the testing and training set with the", ratio, "ratio\n")
+  #Split the data set into a training and testing parts
+  #The testing set will be about 10% of original data set
+  test_index <- createDataPartition(y = data_set$totalRent, times = 1, 
+                                    p = ratio, list = FALSE)
+  
+  #Make the training data to be the 90% of the data set
+  train_set <- data_set[-test_index,]
+  #Make the testing data to be the 10% of the data set
+  temp_set <- data_set[test_index,]
+  
+  #Create the test-set candidate
+  test_set <- temp_set %>% 
+    semi_join(train_set, by = "heatingType") %>%
+    semi_join(train_set, by = "typeOfFlat") %>%
+    semi_join(train_set, by = "condition") %>%
+    semi_join(train_set, by = "interiorQual") %>%
+    semi_join(train_set, by = "energyEfficiencyClass") %>%
+    semi_join(train_set, by = "location") %>%
+    semi_join(train_set, by = "date")
+  
+  #Move the entries that did not make it into 
+  #the test set back into the training set
+  removed <- anti_join(temp_set, test_set, 
+                       by = c("heatingType",
+                              "typeOfFlat",
+                              "condition",
+                              "interiorQual",
+                              "energyEfficiencyClass",
+                              "location",
+                              "date"))
+  train_set <- rbind(train_set, removed)
+  
+  cat("Training set size is", nrow(train_set), "testing set size is", nrow(test_set), "\n")
+  
+  rm(test_index, temp_set, removed)
+  
+  return(list(train_set = train_set, test_set = test_set))
 }
 
 #--------------------------------------------------------------------
@@ -389,7 +451,7 @@ create_arog_data <- function() {
 
   #Read the raw AROG data from the csv file, if it has not being done yet
   if(!exists("raw_arog_data")){
-    cat("Reading data from", AROG_CSV_FILE_REL_NAME, " into \n")
+    cat("Reading data from", AROG_CSV_FILE_REL_NAME, "\n")
     raw_arog_data <- read.csv(AROG_CSV_FILE_REL_NAME)
     raw_arog_data <- as_tibble(raw_arog_data)
   }
@@ -406,15 +468,23 @@ create_arog_data <- function() {
            heatingCosts, serviceCharge, totalRent, date)
   
   #Clean and pre-process the data
-  cleaned_arog_data <- wrangle_data(selected_arog_data)
-  
+  wrangled_arog_data <- wrangle_data(selected_arog_data)
+
   #Split into modeling and validation sets
+  split_arog_data_one <- split_train_test_sets(wrangled_arog_data,
+                                               VALIDATION_TO_MODELING_SET_RATIO)
   
-  #Split the modeling set into training and testing sets
+  #Split the modeling into training and testing sets
+  split_arog_data_two <- split_train_test_sets(split_arog_data_one$train_set,
+                                               TEST_TO_TRAIN_SET_RATIO)
   
-  return(list(raw_data=raw_arog_data,
-              selected_data=selected_arog_data, 
-              cleaned_data=cleaned_arog_data))
+  #Return the resulting sets
+  return(list(raw_data       = raw_arog_data,
+              selected_data  = selected_arog_data, 
+              wrangled_data   = wrangled_arog_data, 
+              validation_data = split_arog_data_one$test_set,
+              training_data   = split_arog_data_two$train_set,
+              testing_data   = split_arog_data_one$test_set))
 }
 
 #--------------------------------------------------------------------
