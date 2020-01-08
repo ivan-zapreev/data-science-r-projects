@@ -10,7 +10,7 @@ if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-proj
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
 if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
-if(!require(outliers)) install.packages("outliers", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 
 library(tidyverse)
 library(tidyr)
@@ -20,7 +20,7 @@ library(caret)
 library(dslabs)
 library(data.table)
 library(dplyr)
-library(outliers)
+library(lubridate)
 
 ####################################################################
 # Section to define global variables
@@ -453,10 +453,19 @@ wrangle_data <- function(selected_arog_data) {
            noRooms = as.integer(round(noRooms)))
   
   #----------------------------------------
-  # Make sure the floor is an integer
+  #Fix wrond and convert dates:
   #----------------------------------------
-  clean_arog_data <- clean_arog_data %>%
-    mutate(floor = round(floor))
+  # "Sep18" -> "2018-09-22"
+  # "May19" -> "2019-05-10"
+  # "Oct19" -> "2019-10-08"
+  clean_arog_data$date <- ifelse(clean_arog_data$date == "Sep18",
+                                  "2018-09-22", clean_arog_data$date)
+  clean_arog_data$date <- ifelse(clean_arog_data$date == "May19",
+                                  "2019-05-10", clean_arog_data$date)
+  clean_arog_data$date <- ifelse(clean_arog_data$date == "Oct19",
+                                  "2019-10-08", clean_arog_data$date)
+  clean_arog_data <- clean_arog_data %>% 
+     mutate(date = ymd(date))
   
   return(clean_arog_data)
 }
@@ -665,7 +674,7 @@ train_dat <- arog_data$training_data #%>%
 val_dat <- arog_data$validation_data #%>%
   #mutate(totalRent = factor(RoundTo(totalRent, 50)))
 
-# TODO: How does average total rent differ per?
+# TODO: How does average total rent differ per location?
 
 #---------------------------
 # Try out knn: FAILED
@@ -695,7 +704,7 @@ val_dat <- arog_data$validation_data #%>%
 #    * confusionMatrix can only be applied to factored values
 #---------------------------
 # rf_fit <- randomForest(
-# totalRent ~ noParkSpaces + interiorQual + 
+# baseRent ~ noParkSpaces + interiorQual + 
 #   condition + floor + heatingType + typeOfFlat + 
 #   hasKitchen + lift + garden + cellar + noRooms + 
 #   balcony + newlyConst,

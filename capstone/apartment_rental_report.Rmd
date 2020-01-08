@@ -16,7 +16,6 @@ if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-proj
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
 if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
-if(!require(outliers)) install.packages("outliers", repos = "http://cran.us.r-project.org")
 if(!require(knitr)) install.packages("knitr", repos = "http://cran.us.r-project.org")
 if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
 if(!require(graphics)) install.packages("graphics", repos = "http://cran.us.r-project.org")
@@ -29,7 +28,6 @@ library(caret)
 library(dslabs)
 library(data.table)
 library(dplyr)
-library(outliers)
 library(knitr)
 library(graphics)
 library(kableExtra)
@@ -90,6 +88,14 @@ nr_floors_summary <- function(app_type, data_set = arog_data$selected_data) {
               max = max(numberOfFloors))
   return(as_tibble(df))
 }
+
+#--------------------------------------------------------------------
+#This function fixes the mean statistics with the log10 scale used in ggplot
+#--------------------------------------------------------------------
+log10_mean <- function(x) {
+  log10(mean(10 ^ x)) 
+}
+
 ```
 
 # Introduction
@@ -237,9 +243,9 @@ arog_data$selected_data %>%
            (numberOfFloors <= arog_report$MAX_NUM_FLOORS_TO_CONSIDER)) %>%
   group_by(typeOfFlat) %>%
   ggplot() +
-    geom_bar(aes(numberOfFloors)) +
-    scale_y_log10() +
-    facet_wrap(~typeOfFlat, nrow=3) +
+  geom_bar(aes(numberOfFloors)) +
+  scale_y_log10() +
+  facet_wrap(~typeOfFlat, nrow=3) +
   theme(plot.title = element_text(hjust = 0.5, face="bold")) +
   labs(x="The number of floors") +
   ggtitle("The distribution of number of floors per flat type") +
@@ -269,7 +275,7 @@ For example, we could consider assigning:
 * `raised_ground_floor` -- set `floor` to be the average raised ground floor value 
 
 but, let us look at the floor values (filtering out `r sum(arog_data$selected_data$floor > arog_report$MAX_FLOOR_TO_CONSIDER, na.rm = TRUE)` flats higher that at the `r arog_report$MAX_FLOOR_TO_CONSIDER`'th floor), for these flat types:
-```{r, echo = F, out.height = "35%", fig.align="center"}
+```{r, echo = F, out.height = "50%", fig.align="center"}
 arog_data$selected_data %>%
   filter(!is.na(floor) & !is.na(typeOfFlat) & (floor <= arog_report$MAX_FLOOR_TO_CONSIDER) &
            (typeOfFlat %in% c("half_basement", "ground_floor", "raised_ground_floor"))) %>%
@@ -320,9 +326,11 @@ sum(x$serviceCharge == 0)
 zero values present, so we interpret the `N/A` values as defining the fact of no additional service charges.
 
 ### Filtering outliers
-In this section we only considered the numeric/integer columns of the data set. The initial set of outliers per column is obtained using: ```{r, eval = F}
+In this section we only considered the numeric/integer columns of the data set. The initial set of outliers per column is obtained using: 
+```{r, eval = F}
 boxplot.stats(.)$out
 ```
+
 However, not all of the obtained outlier values are the true outliers. It may be that some flats do stand out as examples of extraordinary property, and not due to owner input errors. This is why, for each of the column, the identified outliers are analyzed and it is then decided on how much of them is to be removed. 
 
 #### Column: `noRooms`
@@ -455,6 +463,13 @@ In addition to the data alternations done above we have also done the following:
 * Filter out flats:
     * Other than `"half_basement"`, `"other"`, and `"unknown"`; but with `floor` < $0$
     * With zero `totalRent` values (`r length(which(arog_data$selected_data$totalRent == 0))` entries)
+* Fix wrong and convert scraping dates:
+    * `"Sep18"` changes into `ymd("2018-09-22")`[^7]
+    * `"May19"` changes into `ymd("2019-05-10")`
+    * `"Oct19"` changes into `ymd("2019-10-08")`
+* Made sure that the integer-valued ("floor", "noParkSpaces", "noRooms") columns are rounded.
+    
+[^7]: The `ymd(.)` function is provided by the `lubridate` package.
 
 There may be more inconsistencies present in the data, for example we expect that:
 ```
@@ -551,27 +566,47 @@ As expected, due to returning `testing`/`validation` set rows to the `testing`/`
 
 In this sections we analyze the `training` subset of the original data set only, as we assume that this is the only data available for building the prediction models. The motivation behind is that we want to avoid influencing the model testing and validation results. This is done under a, not-verified, assumption that the the `testing` set, follows the same probability distribution of the conditional probability of interest as the `validation` set. In the *"Results"* section we may come back to this assumption in case the accuracy of the developed statistical model(s) on the `validation` set will turn out to be insufficient.
 
-In this section we shall use data visualization and other techniques to investigate the properties of the data we could use to build the prediction model.
+In this section we shall use data visualization and other techniques to investigate the properties of the data we could use to build the prediction model. In the remainder of the section we analyze:
 
-## Analyzing flat locations
-Let us first notice that the number of flats listed by location seems to follow the same pattern on all of the three data scraping dates. 
+1. Possible `timing`/"scraping date" effects
+2. Possible `flat count` effects
+3. Possible `location` effects
+4. Possible `flat feature` effects
 
-```{r, echo = F, out.height = "35%", fig.align="center"}
+and conclude the section with a short summary of our findings.
+
+## Possible `timing`/"scraping date" effects
+Let us consider any possible effects introduced by the scraping date. In essence, the goal of this section is to understand whether:
+
+1. We shall keep the data scraped on different date distinct, and have the `date` column as a predictor, or
+2. We could consider the combined statistics for all the data ignoring the `date` field as a predictor
+
+We answer this question based on the analysis of "Flat offers per `date`", "Flat counts per `location` per `date`", and "Average `totalRent` per `date`"
+
+### Flat offers per `date`
+Let us consider the number of flat offers per location per date:
+
+```{r, echo = F, out.height = "50%", fig.align="center"}
 arog_data$wrangled_data %>%
   ggplot() + geom_bar(aes(location)) + scale_y_sqrt() +
   labs(x="Various locations", y="Number of flats") +
-  ggtitle("Flat counts per location on different dates") +
+  ggtitle("Offer counts per location per date") +
   theme(axis.text.x=element_blank(),
         axis.ticks.x=element_blank()) +
   facet_wrap(~date, nrow=3) +
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
+The number of flats listed by location seems to follow the same pattern on all of the three data scraping dates. 
 
-The distribution of flat counts per location, for all the dates, indicates that there are a lot of locations with just one flat. However, there are also a few locations with extremely large number of flats.
+It seems like we may ignore the `date` column and consider the joint statistics. To have more solid grounds for that, let us investigate the flat counts per `location` per `date`.
 
-```{r, echo = F, out.height = "35%", fig.align="center"}
+### Flat counts per `location` per `date`
+
+The distribution of flat counts per `location` indicates that there are a lot of locations with just one flat. However, there are also a few locations with a "large" ($>100$) number of flat offers.
+
+```{r, echo = F, out.height = "50%", fig.align="center"}
 offers_per_location <- arog_data$wrangled_data %>% 
-  group_by(location) %>% 
+  group_by(date, location) %>% 
   summarize(cnt = n())
 
 offers_per_location %>%
@@ -579,40 +614,137 @@ offers_per_location %>%
   scale_x_log10() +
   labs(x="Number of flats", y="Number of locations") +
   ggtitle("Distribution of location flat counts") +
+  facet_wrap(~date, nrow=3) +
   geom_histogram(binwidth=.05) +
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
-As follows from the next plot, the median value for the number of flats per location is around $5$.
-
+The median numbers of flats per location are equal for all the dates:
+```{r, echo = F}
+offers_per_location %>% ungroup() %>% group_by(date) %>% summarise(median = median(cnt))
+```
+The average numbers of flats per location for the last two scrapes are equal, and for the first one is somewhat smaller:
+```{r, echo = F}
+offers_per_location %>% ungroup() %>% group_by(date) %>% summarise(average = round(mean(cnt)))
+```
+Overall, the number of flats per location seems to be stable from one date to another:
 ```{r, echo = F, out.height = "35%", fig.align="center"}
 offers_per_location %>% 
   ggplot(aes(x = "", y = cnt))  + 
-  #coord_cartesian(ylim = c(0, 40)) + 
   geom_boxplot(outlier.colour = "red", outlier.alpha = 0.3, outlier.shape = 1, outlier.size = 1) + 
-  scale_y_log10() +
+  stat_summary(fun.y=log10_mean, geom="point", shape=18, size=4, color="#fe02e7") +
+  scale_y_log10()  +
+  facet_wrap(~date, nrow=1) +
   labs(x="All locations", y="Number of flats per location") +
   ggtitle("Flat counts per location") +
   annotation_logticks() + theme_bw() +
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
-Let us plot the `totalRent` per location flat count, ordered by the count. We shall exclude the `totalRent` values below $150$ (`r sum(arog_data$wrangled_data$totalRent <= 150)` entries) for the sake of better visualization. Also to show the trend we will use `ggplot` with `geom_smooth(method = 'gam')`.
+It seems like we may ignore the `date` column and consider the joint statistics. To have more solid grounds for that, let us investigate the average `totalRent` per `date`.
+
+### Average `totalRent` per `date`
+Let us plot the `totalRent` per `date`:
 
 ```{r, echo = F, out.height = "35%", fig.align="center"}
+arog_data$wrangled_data %>%
+  group_by(date) %>% 
+  ggplot(aes(x=date, y = totalRent, group=date)) +
+  geom_boxplot(outlier.colour = "red", outlier.alpha = 0.3, outlier.shape = 1, outlier.size = 1) + 
+  scale_y_log10() +
+  labs(x="Scraping dates", y="Total rent values") +
+  ggtitle("Total rent values per date") +
+  annotation_logticks() + theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+```
+As we see the data seems to be distributed similarly, moreover the does not seem to be any trend in average `totalRent` per `date`, as computed with `geom_smooth(method="lm")`:
+```{r, echo = F, warning = F, out.height = "35%", fig.align="center"}
+arog_data$wrangled_data %>%
+  group_by(date) %>% 
+  ggplot(aes(x=date, y = totalRent)) +
+  geom_point(alpha=0.05) +
+  geom_smooth(method="lm") + 
+  scale_y_log10(limits = c(100,10000)) + 
+  labs(x="Scraping dates", y="Total rent values") +
+  ggtitle("Total rent values per date") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+  theme_bw()
+```
+There does not seem to be any global[^9] `timing` effect in `totalRent` related to the scraping date.
+
+[^9]: There may be some location specific timing effects, but we do not consider them due to the lack of time.
+
+**Conclusion:**  We may ignore the `date` column and consider the joint statistics for all the dates.
+
+## Possible `location` effects
+Let us consider any possible effects introduced by the location. In essence, the goal of this section is to understand whether:
+
+1. The `totalRent` values are `location` dependent
+    + Suggests using the `location` column as a predictor
+2. The offered flat counts per `location`:
+    1. Have influence on the number of `totalRent` value outliers
+        + Suggests using Regularization in statistical modeling
+    2. Are correlated with the `totalRent` values
+        + Facilitates using the `location` column as a predictor
+
+We answer this question based on the analysis of "Average `totalRent` per `location`", "Min/Max `totalRent` per `location` flat count", and "Average `totalRent` per `location` flat count".
+
+### Average `totalRent` per `location`
+Let us consider the variability of the `totalRent`, for several randomly chosen locations, with $> 100$ offers:
+
+```{r, echo = F, out.height = "35%", fig.align="center"}
+set.seed(6)
+locations <- offers_per_location %>% 
+  filter(cnt > 100) %>% 
+  pull(location) %>% unique()
+sampled_locations <- sample(locations, 10)
+
+#Plot the sparse matrix
 left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
-  arrange(cnt) %>% #filter(totalRent > 150) %>%
+  filter(location %in% sampled_locations) %>% 
+  mutate(location = str_replace(location, ".*[_,/]","")) %>%
+  ggplot(aes(x=location, y=totalRent, fill=cnt)) +
+  scale_y_log10() + 
+  geom_boxplot(outlier.colour = "red", outlier.alpha = 0.3,
+               outlier.shape = 1, outlier.size = 1) +
+  labs(x="Selected locations", y="Total rent values") +
+  ggtitle("Total rent variability between locations") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"),
+        axis.text.x = element_text(angle = 12))
+```
+
+**Conclusion:** Locations differ quite significantly in their `totalRent` -- this is a `location` effect.
+
+### Average `totalRent` per `location` flat count
+
+Let us plot the `totalRent` per location flat count, ordered by the count. Also to show the trend we will use `ggplot` with `geom_smooth(method = 'gam')`.
+
+```{r, echo = F, warning = F, out.height = "35%", fig.align="center"}
+offers_per_location <- offers_per_location %>% 
+  ungroup() %>% group_by(location) %>% summarise(cnt = sum(cnt))
+  
+left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
+  arrange(cnt) %>%
   ggplot(aes(x=cnt, y=totalRent)) +
   geom_point(alpha=0.05) +
   scale_x_log10() +
-  #scale_y_log10() +
+  scale_y_log10(limits = c(100,10000)) + 
   geom_smooth(method = 'gam') +
   labs(x="Number of flats in location", y="Flat total rent") +
   ggtitle("The total rent vs. the number of flats per location") +
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
-Clearly, there is a trend in that the places with more flat offers have on-average lower `totalRent` values.
 
+**Conclusion:** There is a trend in that the places with more flat offers have on-average lower `totalRent` values - this is a `number of offers` effect.
+
+### Min/Max `totalRent` per `location` flat count
+...
+
+## Possible `flat feature` effects
+...
+
+##Effects summary
+...
 
 
 # Modeling approach
