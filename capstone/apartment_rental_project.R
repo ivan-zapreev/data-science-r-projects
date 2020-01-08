@@ -3,11 +3,24 @@
 ####################################################################
 options(digits=10)
 
+if(!require(tidyr)) install.packages("tidyr", repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
-if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(outliers)) install.packages("outliers", repos = "http://cran.us.r-project.org")
+
+library(tidyverse)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(caret)
+library(dslabs)
+library(data.table)
+library(dplyr)
+library(outliers)
 
 ####################################################################
 # Section to define global variables
@@ -46,6 +59,17 @@ AROG_REPORT_FILE_NAME <- "arog_report.rda"
 FIRST_ELEM_SEQ <- 1:5 #This sequence is used for debug printing purposes only
 MAX_NUM_FLOORS_TO_CONSIDER <- 10 #The limit on the number of floors for filtering
 MAX_FLOOR_TO_CONSIDER <- 100 #The limit on the floor value for filtering
+
+#The Min/Max numerical/integer field values based on the outliers analysis
+MIN_MAX_OUTLIER_FILTERS <- list(
+  "noRooms" = c(1, 20), 
+  "noParkSpaces" = c(0, 200), 
+  "livingSpace" = c(1, 1000), 
+  "baseRent" = c(100, 30000), 
+  "electricityBasePrice" = c(0, 100), 
+  "heatingCosts" = c(10, 3000), 
+  "serviceCharge" = c(10, 10000), 
+  "totalRent" = c(10, 100000))
 
 ####################################################################
 # Section to define helper functions
@@ -126,6 +150,43 @@ map_na_and_others_to_unknown <- function(data_col, levels_set = c(""),
   return(new_data_col)
 }
 
+#--------------------------------------------------------------------
+# Removes outlier rows for a given column from a given data set.
+# The outliers are detected os those outside the limits in
+# MIN_MAX_OUTLIER_FILTERS whuch has values based on the analysis
+# of the boxplot.stats(.)$out data.
+# Function arguments:
+#    data_set - the data set to be filtered
+#    data_set - the column name to be considered for outliers
+# Result:
+#    Outliers-free data set
+# NOTE:
+#    Previously we would remove all the outliers, but this
+#    is too much as some flats may be outluers by themselves
+#    and not occur due to broken input from the flat owners
+#       outliers <- boxplot.stats(col_data)$out
+#       cat("Detected",length(outliers),"outliers in column: \'",column,"\'\n")
+#       index <- which(col_data %in% outliers)
+#       clean_set <- data_set[-index,]
+#--------------------------------------------------------------------
+remove_outliers <- function(data_set, column) {
+  cat("Removing outliers for", column,
+      ", initial data set size:",nrow(data_set),"rows\n")
+  
+  #First detect the outliers
+  col_data <- data_set[, column] %>% pull(column)
+
+  #Obtain the min/max limits
+  min_max_values <- MIN_MAX_OUTLIER_FILTERS[, column] %>% pull(column)
+  
+  #Identify outlier row indexes and remove 
+  outliers_index <- which((col_data < min_max_values[1]) & (col_data > min_max_values[2]))
+  clean_set <- data_set[-outliers_index,]
+  
+  cat("Removing outliers for", column,
+      ", outliers-free data set size:",nrow(clean_set),"rows\n")
+  return(clean_set)
+}
 
 #--------------------------------------------------------------------
 # This function wrangles the data from the original data set
@@ -249,16 +310,33 @@ wrangle_data <- function(selected_arog_data) {
     select(-yearConstructed)
   
   #----------------------------------------
+  # typeOfFlat - 13.9% N/A values - 
+  # ! Do it first as the floors depend on it !
+  #----------------------------------------
+  # Then we consider the factor levels:
+  #    levels(selected_arog_data$typeOfFlat)
+  #
+  # ""             "apartment" "ground_floor" "half_basement"       "loft"               
+  # "maisonette"    "other"     "penthouse"   "raised_ground_floor" "roof_storey"        
+  # "terraced_flat"
+  #
+  # and set the N/A and "" values to "unknown" value, as "other" is known but just not in the list
+  #    x <- selected_arog_data %>% filter(!is.na(typeOfFlat))
+  #    sum(x$typeOfFlat == "")
+  clean_arog_data$typeOfFlat <-
+    map_na_and_others_to_unknown(clean_arog_data$typeOfFlat)
+  
+  #----------------------------------------
   # floor - 19.0% N/A values
   #----------------------------------------
   #Set the floor values for "ground_floor" and "raised_ground_floor"
-  clean_arog_data$floor <- ifelse(is.na(clean_arog_data$heatingCosts) &
+  clean_arog_data$floor <- ifelse(is.na(clean_arog_data$floor) &
                                   !is.na(clean_arog_data$typeOfFlat) &
                                     (clean_arog_data$typeOfFlat %in%
                                        c("ground_floor", "raised_ground_floor")),
                                          0, clean_arog_data$floor)  
   #Set the floor values for "half_basement"
-  clean_arog_data$floor <- ifelse(is.na(clean_arog_data$heatingCosts) &
+  clean_arog_data$floor <- ifelse(is.na(clean_arog_data$floor) &
                                   !is.na(clean_arog_data$typeOfFlat) &
                                     (clean_arog_data$typeOfFlat == "half_basement"),
                                   -1, clean_arog_data$floor)  
@@ -266,18 +344,20 @@ wrangle_data <- function(selected_arog_data) {
   #Assign the remaining N/A floors to the mean values in the category
   flat_types <- levels(clean_arog_data$typeOfFlat)
   flat_types <- setdiff(flat_types, c("ground_floor", "raised_ground_floor", "half_basement"))
+  #Consider the outliers right away for mean floor computations
+  floor_outliers <- boxplot.stats(clean_arog_data$floor)$out
   for(ft in flat_types) {
     #Compute the mean value
     mean_ft_val <- clean_arog_data %>% 
       filter(!is.na(floor) & (typeOfFlat == ft) & 
-               ( floor <= arog_report$MAX_FLOOR_TO_CONSIDER)) %>%
+               !(floor %in% floor_outliers)) %>%
       pull(floor) %>% mean()
     #Set the mean value
     clean_arog_data$floor <- ifelse(is.na(clean_arog_data$floor) &
                                       (clean_arog_data$typeOfFlat == ft),
                                     mean_ft_val, clean_arog_data$floor)
   }
-  rm(mean_ft_val, flat_types)
+  rm(mean_ft_val, flat_types, floor_outliers)
   
   #----------------------------------------
   # heatingType - 16.4% N/A values
@@ -299,22 +379,6 @@ wrangle_data <- function(selected_arog_data) {
     map_na_and_others_to_unknown(
       clean_arog_data$heatingType,
       c("","H"))
-  
-  #----------------------------------------
-  # typeOfFlat - 13.9% N/A values
-  #----------------------------------------
-  # Then we consider the factor levels:
-  #    levels(selected_arog_data$typeOfFlat)
-  #
-  # ""             "apartment" "ground_floor" "half_basement"       "loft"               
-  # "maisonette"    "other"     "penthouse"   "raised_ground_floor" "roof_storey"        
-  # "terraced_flat"
-  #
-  # and set the N/A and "" values to "unknown" value, as "other" is known but just not in the list
-  #    x <- selected_arog_data %>% filter(!is.na(typeOfFlat))
-  #    sum(x$typeOfFlat == "")
-  clean_arog_data$typeOfFlat <-
-    map_na_and_others_to_unknown(clean_arog_data$typeOfFlat)
   
   #----------------------------------------
   # serviceCharge - 2.58% N/A values
@@ -339,22 +403,7 @@ wrangle_data <- function(selected_arog_data) {
                                   0, clean_arog_data$floor)
   clean_arog_data$floor <- ifelse(clean_arog_data$typeOfFlat == "half_basement",
                                   1, clean_arog_data$floor)
-  
-  
-  #----------------------------------------
-  #Filter out the apartments which are too high
-  #----------------------------------------
-  clean_arog_data <- clean_arog_data %>%
-    filter( floor <= arog_report$MAX_FLOOR_TO_CONSIDER )
-  
-  #----------------------------------------
-  #Filter out the apartments for which the number of floors is too high
-  #----------------------------------------
-  # IS NOT NEEDED: The column is already dropped!
-  #clean_arog_data <- clean_arog_data %>%
-  #  filter( numberOfFloors <= arog_report$MAX_NUM_FLOORS_TO_CONSIDER )
-  
-  
+
   #----------------------------------------
   # Flats with negative floor values
   #----------------------------------------
@@ -365,6 +414,24 @@ wrangle_data <- function(selected_arog_data) {
     filter(!((floor < 0) & ! (typeOfFlat %in% c("half_basement", "other", "unknown"))))
   
   #----------------------------------------
+  # Exliding the outliers
+  #----------------------------------------
+  clean_arog_data <- remove_outliers(clean_arog_data, "noRooms")
+  clean_arog_data <- remove_outliers(clean_arog_data, "noParkSpaces")
+  clean_arog_data <- remove_outliers(clean_arog_data, "livingSpace")
+  clean_arog_data <- remove_outliers(clean_arog_data, "baseRent")
+  clean_arog_data <- remove_outliers(clean_arog_data, "electricityBasePrice")
+  clean_arog_data <- remove_outliers(clean_arog_data, "heatingCosts")
+  clean_arog_data <- remove_outliers(clean_arog_data, "serviceCharge")
+  clean_arog_data <- remove_outliers(clean_arog_data, "totalRent")
+  
+  #----------------------------------------
+  # Exliding the zero - valued totalRent
+  #----------------------------------------
+  clean_arog_data <- clean_arog_data %>%
+    filter(totalRent > 0 )
+
+  #----------------------------------------
   # Combining the regio columns
   #----------------------------------------
   #Because we want to be able to do predicitons per 
@@ -373,7 +440,21 @@ wrangle_data <- function(selected_arog_data) {
   #regio columnss into a new single one
   clean_arog_data <- clean_arog_data %>% 
     unite("location", c("regio1", "regio2", "regio3"), remove=FALSE) %>%
-    select(-regio1, -regio2, -regio3)
+    select(-regio1, -regio2, -regio3) %>% mutate(location = factor(location))
+  
+  #----------------------------------------
+  # Make sure the integer-valued columns are rounded
+  #----------------------------------------
+  clean_arog_data <- clean_arog_data %>%
+    mutate(floor = as.integer(round(floor)), 
+           noParkSpaces = as.integer(round(noParkSpaces)),
+           noRooms = as.integer(round(noRooms)))
+  
+  #----------------------------------------
+  # Make sure the floor is an integer
+  #----------------------------------------
+  clean_arog_data <- clean_arog_data %>%
+    mutate(floor = round(floor))
   
   return(clean_arog_data)
 }
@@ -427,7 +508,8 @@ split_train_test_sets <- function(data_set, ratio) {
                               "date"))
   train_set <- rbind(train_set, removed)
   
-  cat("Training set size is", nrow(train_set), "testing set size is", nrow(test_set), "\n")
+  cat("Training set size is", nrow(train_set), 
+      "testing set size is", nrow(test_set), "\n")
   
   rm(test_index, temp_set, removed)
   
@@ -452,7 +534,7 @@ create_arog_data <- function() {
   #Read the raw AROG data from the csv file, if it has not being done yet
   if(!exists("raw_arog_data")){
     cat("Reading data from", AROG_CSV_FILE_REL_NAME, "\n")
-    raw_arog_data <- read.csv(AROG_CSV_FILE_REL_NAME)
+    suppressWarnings(raw_arog_data <- read_csv(AROG_CSV_FILE_REL_NAME))
     raw_arog_data <- as_tibble(raw_arog_data)
   }
   
@@ -465,7 +547,12 @@ create_arog_data <- function() {
            yearConstructed, energyEfficiencyClass,
            regio1, regio2, regio3,
            baseRent, electricityBasePrice, 
-           heatingCosts, serviceCharge, totalRent, date)
+           heatingCosts, serviceCharge, totalRent, date) %>%
+    mutate(heatingType = factor(heatingType),
+           typeOfFlat = factor(typeOfFlat),
+           condition = factor(condition),
+           interiorQual = factor(interiorQual),
+           energyEfficiencyClass = factor(energyEfficiencyClass))
   
   #Clean and pre-process the data
   wrangled_arog_data <- wrangle_data(selected_arog_data)
@@ -525,9 +612,10 @@ init_report_data <- function() {
     AROG_DATA_SET_SITE_URL = AROG_DATA_SET_SITE_URL,
     AROG_DATA_SET_FILE_URL = AROG_DATA_SET_FILE_URL,
     VALIDATION_TO_MODELING_SET_RATIO = VALIDATION_TO_MODELING_SET_RATIO,
-    TEST_TO_TRAIN_SET_RATIO = TEST_TO_TRAIN_SET_RATIO, 
+    TEST_TO_TRAIN_SET_RATIO = TEST_TO_TRAIN_SET_RATIO,
     MAX_NUM_FLOORS_TO_CONSIDER = MAX_NUM_FLOORS_TO_CONSIDER,
-    MAX_FLOOR_TO_CONSIDER = MAX_FLOOR_TO_CONSIDER
+    MAX_FLOOR_TO_CONSIDER = MAX_FLOOR_TO_CONSIDER,
+    MIN_MAX_OUTLIER_FILTERS = MIN_MAX_OUTLIER_FILTERS
   ))
 }
 
@@ -538,6 +626,17 @@ init_report_data <- function() {
 #--------------------------------------------------------------------
 store_report_data <- function(arog_report) {
   save(arog_report, file = AROG_REPORT_FILE_NAME)
+}
+
+#--------------------------------------------------------------------
+# This function computes the Root Mean Square Error (RMSE) that is
+# the standard deviation of the residuals (prediction errors). 
+# The two arguments are the predicted and the actual values to
+# be used in RMSE computations. The order of the arguments is not
+# imprortant.
+#--------------------------------------------------------------------
+RMSE <- function(true_ratings, predicted_ratings) {
+  return(sqrt(mean((true_ratings - predicted_ratings)^2)))
 }
 
 ####################################################################
@@ -552,6 +651,59 @@ arog_data <- get_arog_data()
 #02 - Initialize the report data frame thay will be storing all
 #     the required information for the report to be generated
 arog_report <- init_report_data()
+
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+library(caret)
+library(randomForest)
+library(DescTools)
+
+# TODO: Rund the rent to the integer
+train_dat <- arog_data$training_data #%>%
+  #mutate(totalRent = factor(RoundTo(totalRent, 50)))
+val_dat <- arog_data$validation_data #%>%
+  #mutate(totalRent = factor(RoundTo(totalRent, 50)))
+
+# TODO: How does average total rent differ per?
+
+#---------------------------
+# Try out knn: FAILED
+#---------------------------
+# NOTES:
+#     * Running took more than 7 hours and did not finish
+#---------------------------
+# dat <- train_dat[1:nrow(train_dat),]
+# #dat$totalRent <- factor(dat$totalRent)
+# knn_fit <- train(totalRent ~ noParkSpaces + interiorQual + 
+#                    condition + floor + heatingType + typeOfFlat + 
+#                    hasKitchen + lift + garden + cellar + noRooms + 
+#                    balcony + newlyConst,
+#                  method = "knn", 
+#                  tuneGrid = data.frame(k = seq(0, 10, 2)), 
+#                  data = dat)
+# ggplot(knn_fit)
+# totalRent_hat <- predict(knn_fit, newdata = val_dat)
+# RMSE(totalRent_hat, val_dat$totalRent)
+
+#---------------------------
+# Try out random forest:
+#---------------------------
+# NOTES:
+#    * Location had to be removed as it can not handle
+#     categorical predictors with more than 53 categories.
+#    * confusionMatrix can only be applied to factored values
+#---------------------------
+# rf_fit <- randomForest(
+# totalRent ~ noParkSpaces + interiorQual + 
+#   condition + floor + heatingType + typeOfFlat + 
+#   hasKitchen + lift + garden + cellar + noRooms + 
+#   balcony + newlyConst,
+# data = train_dat)
+# 
+# totalRent_hat <- predict(rf_fit, newdata = val_dat)
+# RMSE(totalRent_hat, val_dat$totalRent)
+## confusionMatrix(totalRent_hat, val_dat$totalRent)$overall["Accuracy"]
+
+#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
 #00 - Store the report into the file to be used from the arog_report.Rmd
 store_report_data(arog_report)
