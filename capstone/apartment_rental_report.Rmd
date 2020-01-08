@@ -274,7 +274,7 @@ For example, we could consider assigning:
 * `ground_floor` -- set `floor = 0`
 * `raised_ground_floor` -- set `floor` to be the average raised ground floor value 
 
-but, let us look at the floor values (filtering out `r sum(arog_data$selected_data$floor > arog_report$MAX_FLOOR_TO_CONSIDER, na.rm = TRUE)` flats higher that at the `r arog_report$MAX_FLOOR_TO_CONSIDER`'th floor), for these flat types:
+but, let us look at the floor values (filtering out `r sum(arog_data$selected_data$floor > arog_report$MAX_FLOOR_TO_CONSIDER, na.rm = TRUE)` flats with `floor` $>$ `r arog_report$MAX_FLOOR_TO_CONSIDER`), for these flat types:
 ```{r, echo = F, out.height = "50%", fig.align="center"}
 arog_data$selected_data %>%
   filter(!is.na(floor) & !is.na(typeOfFlat) & (floor <= arog_report$MAX_FLOOR_TO_CONSIDER) &
@@ -571,7 +571,7 @@ In this section we shall use data visualization and other techniques to investig
 1. Possible `timing`/"scraping date" effects
 2. Possible `flat count` effects
 3. Possible `location` effects
-4. Possible `flat feature` effects
+4. Predictor's correlation and PCA
 
 and conclude the section with a short summary of our findings.
 
@@ -720,30 +720,183 @@ left_join(arog_data$wrangled_data, offers_per_location, by="location") %>%
 Let us plot the `totalRent` per location flat count, ordered by the count. Also to show the trend we will use `ggplot` with `geom_smooth(method = 'gam')`.
 
 ```{r, echo = F, warning = F, out.height = "35%", fig.align="center"}
-offers_per_location <- offers_per_location %>% 
-  ungroup() %>% group_by(location) %>% summarise(cnt = sum(cnt))
+offers_per_location <- arog_data$wrangled_data %>%
+  group_by(location) %>% summarise(cnt = n())
   
 left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
   arrange(cnt) %>%
   ggplot(aes(x=cnt, y=totalRent)) +
   geom_point(alpha=0.05) +
   scale_x_log10() +
-  scale_y_log10(limits = c(100,10000)) + 
+  scale_y_log10(limits = c(100, 10000)) +
   geom_smooth(method = 'gam') +
-  labs(x="Number of flats in location", y="Flat total rent") +
-  ggtitle("The total rent vs. the number of flats per location") +
+  labs(x="Number of flats per location", y="Flat total rent") +
+  ggtitle("The total rent vs. flats per location") +
   theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 
 **Conclusion:** There is a trend in that the places with more flat offers have on-average lower `totalRent` values - this is a `number of offers` effect.
 
 ### Min/Max `totalRent` per `location` flat count
-...
+```{r, echo = F}
+NUM_TOP_BOTTOM_ROWS <- 300
+```
+Let us the maximum and minimum `totalRent` values relative to the flat count per `location`. In other words, each `location` has a number of flats offered. If we now combine the flat offers per location into a single totally ordered *flat-offers range*, we can plot how many locations there are with that many orders. Or we can plot the `totalRent` values offered in locations with the same number of flats. The latter will help us to see if the extreme `totalRent` values, like `r NUM_TOP_BOTTOM_ROWS` `top` and `r NUM_TOP_BOTTOM_ROWS` `bottom` priced flats are more likely to be encountered in locations with lower or larger number of flat offers.
+```{r, echo = F}
+#Get the flats with the top 100 totalRent values
+top_total_rent <- arog_data$wrangled_data %>%
+  left_join(., offers_per_location, by="location") %>%
+  arrange(desc(totalRent)) %>% 
+  slice(1:NUM_TOP_BOTTOM_ROWS) %>%
+  select(cnt, totalRent, location) %>%
+  mutate(Type = "Top rates")
 
-## Possible `flat feature` effects
-...
+#Get the flats with the bottom 100 totalRent values
+bottom_total_rent <- arog_data$wrangled_data %>%
+  left_join(., offers_per_location, by="location") %>%
+  arrange(totalRent) %>% 
+  slice(1:NUM_TOP_BOTTOM_ROWS) %>%
+  select(cnt, totalRent, location) %>% 
+  mutate(Type = "Bottom rates")
+```
+If we indicate `top` and `bottom` priced flats on the plot then we can observe:
+```{r, echo = F, warning = F, out.height = "35%", fig.align="center"}
+left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
+  arrange(cnt) %>%
+  ggplot(aes(x=cnt, y=totalRent)) +
+  geom_point(alpha=0.05) +
+  scale_x_log10() +
+  scale_y_log10() +
+  geom_point(data = top_total_rent, aes(cnt, totalRent), color="blue") +
+  geom_point(data = bottom_total_rent, aes(cnt, totalRent), color="red") +
+  labs(x="Number of flats per location", y="Flat total rent") +
+  ggtitle("The top/bottom total rent vs. flats per location") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+```
+that it seems that the `top`/`bottom` priced rentals are, almost uniformly, spread all over the *flat-offers range*. 
+```{r, echo = F}
+#Given a list of locations this function computes
+#the total number of flat offers
+cnt_in_all_locs <- function(locations) {
+  locations <- unique(locations)
+  sum <- 0
+  for(loc in locations) {
+    val <- offers_per_location %>% filter(location == loc) %>% pull(cnt)
+    sum <- sum + val
+  }
+  return(sum)
+}
 
-##Effects summary
+# This function plots the number of outliers versus
+# total number of offers on the flat offers per
+# location range.
+plot_outlier_set <- function(cnt_to_outliers_cnt, type) {
+  #Plot the data
+  title <- paste(paste("The",type),"rent counts vs. flats per location")
+  cnt_to_outliers_cnt %>%
+    ggplot(aes(x=cnt)) + 
+    scale_x_log10() +
+    scale_y_log10() +
+    geom_area(aes(y=total_cnt, fill=I("green")), 
+              color= "black", linetype="solid", alpha=0.3) +
+    geom_area(aes(y=outliers_cnt, fill=I("red")),
+              color= "black", linetype="solid", alpha=0.3) +
+    labs(x="Flats per location", y="Number of totalRent values") +
+    ggtitle(title) +
+    theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+    scale_fill_discrete(name = "Per location", labels = c("Total #offers", "#Offer outliers"))
+}
+```
+To get a better view on data, considering `top` and total `totalRent` counts versus the *flat-offers range*:
+```{r, echo = F, out.height = "35%", fig.align="center"}
+  top_counts <- top_total_rent%>%
+    group_by(cnt) %>%
+    summarise(outliers_cnt = n(), 
+              total_cnt = cnt_in_all_locs(location))
+  plot_outlier_set(top_counts, "Top")
+```
+Considering `bottom` and total `totalRent` counts versus the *flat-offers range*:
+```{r, echo = F, out.height = "35%", fig.align="center"}
+  bot_counts <- bottom_total_rent%>%
+    group_by(cnt) %>%
+    summarise(outliers_cnt = n(), 
+              total_cnt = cnt_in_all_locs(location))
+  plot_outlier_set(bot_counts, "Bottom")
+```
+
+The total count is computed as the sum of offers in the locations with the same number of offers. Effectively it is equal to `"number of offers in location"` $\times$ `"number of locations with this number of offers"`. This explains almost line-like behavior of the `"Total #offers"` plots. The irregularities are caused by having more than one location with the given number of flat offers (mind the `log10` scale of the $y$ axis).
+
+The number of `bottom` outliers is $\approx$ uniform across the *flat-offers range*. The number of `top` outliers looks somewhat biased to be larger for locations with more offers. Let us plot the outliers to total ratio:
+
+```{r, echo = F, out.height = "35%", fig.align="center"}
+ggplot() + 
+  geom_point(data = bot_counts, 
+            aes(x=cnt, y=outliers_cnt/total_cnt, color="blue")) +
+  geom_point(data = top_counts,
+            aes(x=cnt, y=outliers_cnt/total_cnt, color= "red")) + 
+  scale_x_log10() + scale_y_sqrt() +
+  scale_color_discrete(name = "Legend:", labels = c("% Bottom outliers", "% Top outliers")) +
+  labs(x="Percent of outliers", y="Flats per location") +
+  ggtitle("") +
+  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+```
+The plot above has, even though contains quite some "noise" for $50$-$200$ flats per location, indicates the common trend of having proportionally less outliers in locations with more rental offers.
+
+**Conclusion 1:** It is less likely to have a cheap rentals in locations with large number of offers.
+**Conclusion 2:** It is less likely to have an expensive rentals in locations with a larger number of offers.
+
+## Predictor's correlation and PCA
+```{r, echo = F}
+num_predictors <- ncol(arog_data$wrangled_data) - 1
+```
+In this case-study we have selected `r num_predictors` potential predictors:
+```{r, echo = F}
+setdiff(names(arog_data$wrangled_data), "totalRent")
+```
+As we have discussed in the `timing` effects  section the `date` column seems to be eligible for exclusion. However, to give this a more formal ground and also to reduce the number of predictors even further let us consider the correlation matrix of the training data columns:
+
+```{r}
+#First create the predictors matrix, from the wrangled data
+predictors_mtx <- arog_data$wrangled_data %>% 
+  select(-totalRent) %>% 
+  data.matrix(.)
+
+#Next compute the correlations matrix and round off the values
+corr_mtx <- predictors_mtx %>%
+  cor(.) %>% round(., 3)
+```
+When visualized, we see that there is quite a few predictors with strong correlation:
+
+```{r, echo = F, fig.align="center"}
+idx_seq <- 1:num_predictors
+image(idx_seq, idx_seq,
+      corr_mtx[num_predictors:1,],
+      useRaster=TRUE,
+      axes=FALSE,
+      xlab="", ylab="",
+      xaxs="r", yaxs="r") %>%
+    abline(h = idx_seq + 0.5, v = idx_seq + 0.5, col = "grey") %>%
+    title(main = "Predictor columns correlation matrix",
+          xlab="Predictor idx", ylab="Predictor idx", line = 1)
+    axis(2, at=idx_seq, labels=as.character(num_predictors:1), lwd=0, pos=0.5)
+    axis(3, at=idx_seq, labels=as.character(idx_seq), lwd=0, pos=20.15)
+
+  for(i in 1:length(idx_seq)){ 
+    for(j in 1:length(idx_seq)){
+        text(x=length(idx_seq) +1 - i, y=j, as.character(corr_mtx[j,i]), cex = 0.45, col = "black", font=2)
+    }
+  }
+```
+For instance, `heatingType` (idx: $2$) is strongly correlated with `garden` (idx: $5$), `typeOfFlat` (idx: $9$), `condition` (idx: $12$), `interiorQual` (idx: $14$), `electricityBasePrice` (idx: $18$), and `date` (idx: $21$).
+
+Motivated by the correlation analysis, we can use the Principle Component Analysis (PCA) to see if we have a distance preserving transformation of our data that gives us a new feature-space basis in which most of the data variability is explained by fewer predictors:
+```{r}
+pca_result <- prcomp(predictors_mtx)
+summary(pca_result)
+```
+As one can see from the PCA summary above, according to Cumulative Proportion of Variance, it shall suffice to use the first two principle components (`PC1`, and `PC2`) to explain $\approx 99.3$% of the data.
+
+## Data analysis summary
 ...
 
 

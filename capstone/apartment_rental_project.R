@@ -668,13 +668,27 @@ library(caret)
 library(randomForest)
 library(DescTools)
 
-# TODO: Rund the rent to the integer
+# TODO: Rund the rent to the integer?
+
 train_dat <- arog_data$training_data #%>%
   #mutate(totalRent = factor(RoundTo(totalRent, 50)))
 val_dat <- arog_data$validation_data #%>%
   #mutate(totalRent = factor(RoundTo(totalRent, 50)))
+x_mtx <- train_dat %>% select(-totalRent) %>% data.matrix(.)
 
-# TODO: How does average total rent differ per location?
+#---------------------------
+# Correlations
+#---------------------------
+# x_cor <- cor(x_mtx)
+# x_cor_rnd <- round(x_cor, 3)
+# image(1:ncol(x_cor_rnd), 1:ncol(x_cor_rnd), x_cor_rnd[,ncol(x_cor_rnd):1])
+
+#---------------------------
+# PCA
+#---------------------------
+# x_pca <- prcomp(x_mtx)
+# summary(x_pca)
+
 
 #---------------------------
 # Try out knn: FAILED
