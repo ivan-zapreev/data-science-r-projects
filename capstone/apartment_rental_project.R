@@ -67,7 +67,7 @@ MIN_MAX_OUTLIER_FILTERS <- list(
   "livingSpace" = c(1, 1000), 
   "baseRent" = c(100, 30000), 
   "electricityBasePrice" = c(0, 100), 
-  "heatingCosts" = c(10, 3000), 
+  "heatingCosts" = c(0, 3000), 
   "serviceCharge" = c(10, 10000), 
   "totalRent" = c(10, 100000))
 
@@ -170,21 +170,23 @@ map_na_and_others_to_unknown <- function(data_col, levels_set = c(""),
 #       clean_set <- data_set[-index,]
 #--------------------------------------------------------------------
 remove_outliers <- function(data_set, column) {
-  cat("Removing outliers for", column,
-      ", initial data set size:",nrow(data_set),"rows\n")
+  cat("Initial data size for removing", column,
+      " outliers:",nrow(data_set),"rows\n")
   
   #First detect the outliers
   col_data <- data_set[, column] %>% pull(column)
 
   #Obtain the min/max limits
-  min_max_values <- MIN_MAX_OUTLIER_FILTERS[, column] %>% pull(column)
+  min_max_values <- MIN_MAX_OUTLIER_FILTERS[[column]]
+  cat("Considering the allowed", column, "min/max values:",
+      min_max_values[1], "/", min_max_values[2], "\n")
   
   #Identify outlier row indexes and remove 
-  outliers_index <- which((col_data < min_max_values[1]) & (col_data > min_max_values[2]))
-  clean_set <- data_set[-outliers_index,]
+  good_index <- which((min_max_values[1] <= col_data) & (col_data <= min_max_values[2]))
+  clean_set <- data_set[good_index,]
   
-  cat("Removing outliers for", column,
-      ", outliers-free data set size:",nrow(clean_set),"rows\n")
+  cat("Outliers-free data size for", column,
+      " outliers:",nrow(clean_set),"rows\n")
   return(clean_set)
 }
 
