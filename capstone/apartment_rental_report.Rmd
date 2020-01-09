@@ -1022,7 +1022,7 @@ From the plot above, there is a clear clasterization of the `totalRent` values. 
 [^13]: For more information see also the [list of caret's Available Models](https://topepo.github.io/caret/available-models.html).
 [^14]: This is a high-performance implementation of a random forest model `"rf"`
 
-The algorithms above will be run with the default parameters, unless tuning grid parameters are required. Therefore we will consider the entire `modeling` set, as any cross-validation will be done within the `train(.)` method of the `caret` package. Last but not least, we will only use the first two principle components of the available predictors data. Any models that will fail to be trained within (`GLOBAL_METHOD_TIME_OUT_SECONDS = ` `r arog_report$GLOBAL_METHOD_TIME_OUT_SECONDS`) seconds will be discarded from the further use. Any additional model training parameters, if required, will be presented in the *"Results"* section of this report.
+The algorithms above will be run with the default parameters, unless tuning grid parameters are required. Therefore we will consider the entire `modeling` set, as any cross-validation will be done within the `train(.)` method of the `caret` package. Last but not least, we will only use the first two principle components of the available predictors data. Any models that will fail to be trained within (`TRAIN_CPU_TIME_OUT_SECONDS = ` `r arog_report$TRAIN_CPU_TIME_OUT_SECONDS`) CPU seconds will be discarded from the further use. Any additional model training parameters, if required, will be presented in the *"Results"* section of this report.
 
 ## Modeling code snippets
 To further clarify our approach, below we provide some of the code used for model training and evaluation. First, we present the main utility functions. Next, we show their use in a single *model-train-evaluate* sequence.
@@ -1079,7 +1079,7 @@ The model training is be with the next function, mind the time-out handling:
 #    exp_res - the expected results vector for the predictors
 #    method - the method to be used
 # The training will be done with a time-out defined by the 
-#   GLOBAL_METHOD_TIME_OUT_SECONDS
+#   TRAIN_CPU_TIME_OUT_SECONDS
 # The result is the list with the following elements:
 #    method - the method used
 #    start_time - the time the training started
@@ -1105,9 +1105,9 @@ train_model <- function(data_mtx, exp_res, method, ...) {
       
       #Record the end time and the result
       train_res <- append(train_res, list(fit_model = fit_model))
-    }, timeout = GLOBAL_METHOD_TIME_OUT_SECONDS)
+    }, timeout = TRAIN_CPU_TIME_OUT_SECONDS))
   }, TimeoutException = function(ex) {
-    message("Timeout (", GLOBAL_METHOD_TIME_OUT_SECONDS, 
+    message("Timeout (", TRAIN_CPU_TIME_OUT_SECONDS, 
             " sec.) while training the '", method, "' model, skipping!")
   })
 

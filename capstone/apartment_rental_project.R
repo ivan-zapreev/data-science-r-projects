@@ -46,7 +46,7 @@ TEST_TO_TRAIN_SET_RATIO <- 0.2
 #Define a sequene of lambdas for regularization
 REGULARIZATION_LAMBDAS <- seq(0, 10, 0.25)
 #The modeling method time out in seconds
-GLOBAL_METHOD_TIME_OUT_SECONDS <- 2*60*60
+TRAIN_CPU_TIME_OUT_SECONDS <- 6*60*60 #Is set to 6 CPU hours
 #The number of principle components to consider
 NUM_PC_TO_CONSIDER <- 2 #Is set to two which explains the 99.3% of data variability
                         #Setting it to 6 will explain the 99.99% of data variability
@@ -642,7 +642,7 @@ init_report_data <- function() {
     MAX_NUM_FLOORS_TO_CONSIDER = MAX_NUM_FLOORS_TO_CONSIDER,
     MAX_FLOOR_TO_CONSIDER = MAX_FLOOR_TO_CONSIDER,
     MIN_MAX_OUTLIER_FILTERS = MIN_MAX_OUTLIER_FILTERS,
-    GLOBAL_METHOD_TIME_OUT_SECONDS = GLOBAL_METHOD_TIME_OUT_SECONDS
+    TRAIN_CPU_TIME_OUT_SECONDS = TRAIN_CPU_TIME_OUT_SECONDS
   ))
 }
 
@@ -736,9 +736,9 @@ train_model <- function(data_mtx, exp_res, method, ...) {
       
       #Record the end time and the result
       train_res <- append(train_res, list(fit_model = fit_model))
-    }, timeout = GLOBAL_METHOD_TIME_OUT_SECONDS)
+    }, timeout = TRAIN_CPU_TIME_OUT_SECONDS)
   }, TimeoutException = function(ex) {
-    message("Timeout (", GLOBAL_METHOD_TIME_OUT_SECONDS, 
+    message("Timeout (", TRAIN_CPU_TIME_OUT_SECONDS, 
             " sec.) while training the '", method, "' model, skipping!")
   })
 
