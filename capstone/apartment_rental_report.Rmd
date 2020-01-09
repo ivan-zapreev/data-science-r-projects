@@ -983,10 +983,10 @@ From the plot above, there is a clear clasterization of the `totalRent` values. 
 
 * `"lm"` -- Linear Regression
 * `"glm"` -- Generalized Linear Model
-* `"svmLinear"` -- Support Vector Machines with Linear Kernel
 * `"knn"` -- k-Nearest Neighbor Classification
-* `"gamLoess"` -- Generalized Additive Model using LOESS
 * `"Rborist"` -- Random Forest[^14]
+* `"svmLinear"` -- Support Vector Machines with Linear Kernel
+* `"gamLoess"` -- Generalized Additive Model using LOESS
 
 [^13]: For more information see also the [list of caret's Available Models](https://topepo.github.io/caret/available-models.html).
 [^14]: This is a high-performance implementation of a random forest model `"rf"`
@@ -1050,6 +1050,7 @@ The model training is be with the next function, mind the time-out handling:
 # The training will be done with a time-out defined by the 
 #   GLOBAL_METHOD_TIME_OUT_SECONDS
 # The result is the list with the following elements:
+#    method - the method used
 #    start_time - the time the training started
 #    success - the success indicating flag
 #    end_time - the time the training finished, if success == TRUE
@@ -1060,7 +1061,7 @@ train_model <- function(data_mtx, exp_res, method, ...) {
   ifrm(fit_model)
   
   #Initialize new empty training results list
-  train_res <- list()
+  train_res <- list(method = method)
   
   #Train the model, with a time-out
   withTimeout({
@@ -1079,7 +1080,10 @@ train_model <- function(data_mtx, exp_res, method, ...) {
   
   #Mark the success flag
   train_res <- append(train_res, list(success = exists("fit_model")))
-
+  
+  #Remove the fit model global if it exists
+  ifrm(fit_model)
+  
   #Return the result
   return(train_res)
 }
@@ -1164,17 +1168,19 @@ The experiments were run on the following hardware at hand:
     SMC Version (system): 2.29f24
 ```
 
-## Mode `lm` results
+## Modeling results
 
-## Mode `glm` results
+### Linear Regression -- `lm`
 
-## Mode `svmLinear` results
+### Generalized Linear Model -- `glm`
 
-## Mode `knn` results
+### K-Nearest Neighbors -- `knn`
 
-## Mode `gamLoess` results
+### Random Forest -- `Rborist`
 
-## Mode `Rborist` results
+### Support Vector Machines -- `svmLinear`
+
+### Generalized Additive Model -- `gamLoess`
 
 # Results summary
 

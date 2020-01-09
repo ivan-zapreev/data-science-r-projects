@@ -712,6 +712,7 @@ prepare_pc_predictors <- function(pca_result, data_mtx, num_pc = NUM_PC_TO_CONSI
 # The training will be done with a time-out defined by the 
 #   GLOBAL_METHOD_TIME_OUT_SECONDS
 # The result is the list with the following elements:
+#    method - the method used
 #    start_time - the time the training started
 #    success - the success indicating flag
 #    end_time - the time the training finished, if success == TRUE
@@ -722,7 +723,7 @@ train_model <- function(data_mtx, exp_res, method, ...) {
   ifrm(fit_model)
   
   #Initialize new empty training results list
-  train_res <- list()
+  train_res <- list(method = method)
   
   #Train the model, with a time-out
   withTimeout({
@@ -845,15 +846,25 @@ glm_mdl_res <- evaluate_model(glm_train_res, valid_pc_mtx, valid_set$totalRent)
 glm_mdl_res$rmse
 
 #Train and validate the KNN model
-rbt_train_res <- train_model(model_pc_mtx, model_set$totalRent, "knn",
+knn_train_res <- train_model(model_pc_mtx, model_set$totalRent, "knn",
                              tuneGrid = data.frame(k = seq(13, 18, 1)))
-rbt_mdl_res <- evaluate_model(rbt_train_res, valid_pc_mtx, valid_set$totalRent)
-rbt_mdl_res$rmse
+knn_mdl_res <- evaluate_model(knn_train_res, valid_pc_mtx, valid_set$totalRent)
+knn_mdl_res$rmse
 
 #Train and validate the Rborist model
 rbt_train_res <- train_model(model_pc_mtx, model_set$totalRent, "Rborist")
 rbt_mdl_res <- evaluate_model(rbt_train_res, valid_pc_mtx, valid_set$totalRent)
 rbt_mdl_res$rmse
+
+#Train and validate the svmLinear model
+svm_train_res <- train_model(model_pc_mtx, model_set$totalRent, "svmLinear")
+svm_mdl_res <- evaluate_model(svm_train_res, valid_pc_mtx, valid_set$totalRent)
+svm_mdl_res$rmse
+
+#Train and validate the gamLoess model
+gam_train_res <- train_model(model_pc_mtx, model_set$totalRent, "gamLoess")
+gam_mdl_res <- evaluate_model(gam_train_res, valid_pc_mtx, valid_set$totalRent)
+gam_mdl_res$rmse
 
 # summary(x_pca)
 # 
