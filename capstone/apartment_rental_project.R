@@ -46,7 +46,7 @@ TEST_TO_TRAIN_SET_RATIO <- 0.2
 #Define a sequene of lambdas for regularization
 REGULARIZATION_LAMBDAS <- seq(0, 10, 0.25)
 #The modeling method time out in seconds
-TRAIN_CPU_TIME_OUT_SECONDS <- 6*60*60 #Is set to 6 CPU hours
+TRAIN_CPU_TIME_OUT_SECONDS <- 3*60*60 #Is set to 3 CPU hours
 #The number of principle components to consider
 NUM_PC_TO_CONSIDER <- 2 #Is set to two which explains the 99.3% of data variability
 #Setting it to 6 will explain the 99.99% of data variability
@@ -799,11 +799,10 @@ train_model <- function(model_pc_mtx, method, ...) {
 # The model evaluation function takes the:
 #     mdl_res - the modeling results with the fit model to make predictions
 #     valid_pc_mtx - the validation set data matrix in PC space
-#     exp_res - the actual validation set values
 # Once the model predicts the values are the RMSE score is computed.
 # The result of the function is the list with the following elements:
 #    mdl_res - the modeling results
-#    valid_pc_mtx  - the validation set data matrix in PC space
+#    exp_res - the expected result values, i.e. valid_pc_mtx[,1]
 #    act_res - the actually predicted values
 #    rmse    - the RMSE score between valid_pc_mtx[,1] and act_res
 #--------------------------------------------------------------------
@@ -823,10 +822,10 @@ evaluate_model <- function(mdl_res, valid_pc_mtx) {
   }
   
   #Create the resulting list and return
-  return(list(mdl_res      = mdl_res, 
-              valid_pc_mtx = valid_pc_mtx,
-              act_res      = act_res,
-              rmse         = rmse))
+  return(list(mdl_res  = mdl_res, 
+              exp_res  = valid_pc_mtx[, 1],
+              act_res  = act_res,
+              rmse     = rmse))
 }
 
 #--------------------------------------------------------------------
@@ -840,21 +839,22 @@ evaluate_model <- function(mdl_res, valid_pc_mtx) {
 #          forwarded to the train(.) function of the caret package
 # This function returns the updated report list, storing a method
 # named element which is the list storing the model trainig and the
-# model evaluation results.
+# model evaluation results. This function also always saves the 
+# updated report version into the file. So that each time a new model
+# is done there is an updated set of data ready to be reported upon.
 #--------------------------------------------------------------------
 train_model_and_report <- function(arog_report, pc_space_data, method, ...) {
+  curr_date_time <- function() {return(strftime(Sys.time(),"%D %H:%M:%S"))}
+  
   #Run training
-  cat("Start trainig `", method,"` model (",
-      format(Sys.time(),usetz = TRUE),")\n")
+  cat("Start trainig `", method,"` model (", curr_date_time(),")\n")
   train_res <- train_model(pc_space_data$model_pc_mtx, method, ...)
   
   #Run evaluation
-  cat("Start evaluating `", method,"` model (",
-      format(Sys.time(),usetz = TRUE),")\n")
+  cat("Start evaluating `", method,"` model (", curr_date_time(),")\n")
   eval_res  <- evaluate_model(train_res, pc_space_data$valid_pc_mtx)
   
-  cat("Finished evaluating `", method,"` model (", 
-      format(Sys.time(),usetz = TRUE),")\n")
+  cat("Finished evaluating `", method,"` model (", curr_date_time(),")\n")
   
   #Create the resulting list
   results <- list(train_res = train_res,
@@ -865,6 +865,9 @@ train_model_and_report <- function(arog_report, pc_space_data, method, ...) {
   names(arog_report)[which(names(arog_report)=="xxxx")] <- paste(method,"_results",sep="")
   
   cat("The '", method,"' model RMSE score is", eval_res$rmse,"\n")
+  
+  #Store the report into the file to be used from the arog_report.Rmd
+  store_report_data(arog_report)
   
   #Return the updated report
   return(arog_report)
@@ -905,6 +908,3 @@ arog_report <- train_model_and_report(arog_report, pc_space_data, "svmLinear")
 
 #09 - Train and validate the gamLoess model
 arog_report <- train_model_and_report(arog_report, pc_space_data, "gamLoess")
-
-#10 - Store the report into the file to be used from the arog_report.Rmd
-store_report_data(arog_report)
