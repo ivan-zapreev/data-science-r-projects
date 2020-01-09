@@ -125,8 +125,6 @@ The additional data preparation steps will be described in the *"Data wrangling"
 
 ## Project goal
 
-
-
 ## Execution plan
 
 Let us now briefly outline the main steps to be performed to reach the previously formalized project goal:
@@ -564,18 +562,16 @@ As expected, due to returning `testing`/`validation` set rows to the `testing`/`
   1.2 Data visualization
  2. Presents insights gained -->
 
-In this sections we analyze the `training` subset of the original data set only, as we assume that this is the only data available for building the prediction models. The motivation behind is that we want to avoid influencing the model testing and validation results. This is done under a, not-verified, assumption that the the `testing` set, follows the same probability distribution of the conditional probability of interest as the `validation` set. In the *"Results"* section we may come back to this assumption in case the accuracy of the developed statistical model(s) on the `validation` set will turn out to be insufficient.
+In this section we shall use data visualization and other techniques to investigate the properties of the data we could use to build the prediction model. In the remainder of the section we shall address:
 
-In this section we shall use data visualization and other techniques to investigate the properties of the data we could use to build the prediction model. In the remainder of the section we analyze:
+1. Possible `timing` effects
+2. Possible `location` effects
+3. Predictor's correlation
+4. Princicple component analysis
 
-1. Possible `timing`/"scraping date" effects
-2. Possible `flat count` effects
-3. Possible `location` effects
-4. Predictor's correlation and PCA
+Eventually, we shall conclude the section with a short summary of our findings.
 
-and conclude the section with a short summary of our findings.
-
-## Possible `timing`/"scraping date" effects
+## Possible `timing` effects
 Let us consider any possible effects introduced by the scraping date. In essence, the goal of this section is to understand whether:
 
 1. We shall keep the data scraped on different date distinct, and have the `date` column as a predictor, or
@@ -584,7 +580,7 @@ Let us consider any possible effects introduced by the scraping date. In essence
 We answer this question based on the analysis of "Flat offers per `date`", "Flat counts per `location` per `date`", and "Average `totalRent` per `date`"
 
 ### Flat offers per `date`
-Let us consider the number of flat offers per location per date:
+Let us consider the number of flat offers per location per data scraping date:
 
 ```{r, echo = F, out.height = "50%", fig.align="center"}
 arog_data$wrangled_data %>%
@@ -674,7 +670,7 @@ There does not seem to be any global[^9] `timing` effect in `totalRent` related 
 
 [^9]: There may be some location specific timing effects, but we do not consider them due to the lack of time.
 
-**Conclusion:**  We may ignore the `date` column and consider the joint statistics for all the dates.
+**Conclusion:**  We can ignore the `date` column and consider the joint statistics for all the dates.
 
 ## Possible `location` effects
 Let us consider any possible effects introduced by the location. In essence, the goal of this section is to understand whether:
@@ -824,7 +820,7 @@ Considering `bottom` and total `totalRent` counts versus the *flat-offers range*
   plot_outlier_set(bot_counts, "Bottom")
 ```
 
-The total count is computed as the sum of offers in the locations with the same number of offers. Effectively it is equal to `"number of offers in location"` $\times$ `"number of locations with this number of offers"`. This explains almost line-like behavior of the `"Total #offers"` plots. The irregularities are caused by having more than one location with the given number of flat offers (mind the `log10` scale of the $y$ axis).
+The total count is computed as the sum of offers in the locations with the same number of offers. Effectively it is equal to `"number of offers in location"` $\times$ `"number of locations with this number of offers"`. This explains almost line-like behavior of the `"Total #offers"` plots. The irregularities are caused by having more than one location with the given number of flat offers (mind the `log10` scale of the $x$ and $y$ axis).
 
 The number of `bottom` outliers is $\approx$ uniform across the *flat-offers range*. The number of `top` outliers looks somewhat biased to be larger for locations with more offers. Let us plot the outliers to total ratio:
 
@@ -845,7 +841,7 @@ The plot above has, even though contains quite some "noise" for $50$-$200$ flats
 **Conclusion 1:** It is less likely to have a cheap rentals in locations with large number of offers.
 **Conclusion 2:** It is less likely to have an expensive rentals in locations with a larger number of offers.
 
-## Predictor's correlation and PCA
+## Predictor's correlation
 ```{r, echo = F}
 num_predictors <- ncol(arog_data$wrangled_data) - 1
 ```
@@ -889,7 +885,11 @@ image(idx_seq, idx_seq,
 ```
 For instance, `heatingType` (idx: $2$) is strongly correlated with `garden` (idx: $5$), `typeOfFlat` (idx: $9$), `condition` (idx: $12$), `interiorQual` (idx: $14$), `electricityBasePrice` (idx: $18$), and `date` (idx: $21$).
 
-Motivated by the correlation analysis, we can use the Principle Component Analysis (PCA) to see if we have a distance preserving transformation of our data that gives us a new feature-space basis in which most of the data variability is explained by fewer predictors:
+Having highly correlated columns implies that we could use less predictors to build a statistical model without loosing much accuracy.
+
+## Principle Component Analysis
+
+As motivated by the correlation analysis above, here we will use the Principle Component Analysis (PCA) to see if we have a distance preserving transformation of our data that gives us a new feature-space basis in which most of the data variability is explained by fewer predictors:
 ```{r}
 pca_result <- prcomp(predictors_mtx)
 summary(pca_result)
@@ -897,8 +897,22 @@ summary(pca_result)
 As one can see from the PCA summary above, according to Cumulative Proportion of Variance, it shall suffice to use the first two principle components (`PC1`, and `PC2`) to explain $\approx 99.3$% of the data.
 
 ## Data analysis summary
-...
+In the *"Data analysis"* section we have analyzed our data with respect to possible `timing`, and `location` effects. In addition, to reduce the number of predictors we've performed predictor's correlation and princicple component analysis. The findings of this section can be summarized as follows.
 
+### Data effects:
+
+In case we are ti build our own statistical model, as opposed using one of the already available via the `cared` package of `R`, we should:
+
+1. The `timing` effect is not confirmed:
+    + We can ignore the `date` column and consider the joint statistics for all the dates.
+2. The `location` effects are confirmed:
+    + The strong correlation of `location` with `totalRent` has to be taken into account[^11]
+
+[^11]: This includes the discovered correlation from the `flat counts` per location as the flat offers per location do not very much with time.
+
+### Dimension reduction:
+
+Due to a high correlation of multiple predictors we can significantly reduce the dimensionality of the feature space. It suffices to use the first two/six principle components to explain $\approx 99.3$/$99.99$% of the data.
 
 # Modeling approach
 <!-- A modeling approach section that explains the modeling approach -->

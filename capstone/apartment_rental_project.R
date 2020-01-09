@@ -46,10 +46,10 @@ AROG_DATA_SET_SITE_URL <- "https://www.kaggle.com/corrieaar/apartment-rental-off
 AROG_DATA_DIR_NAME <- "data"
 AROG_ZIP_FILE_NAME <- "apartment-rental-offers-in-germany.zip"
 AROG_DATA_SET_FILE_URL <-  paste("https://raw.githubusercontent.com/ivan-zapreev/data-science-r-projects/master/capstone/",
-                              paste(AROG_DATA_DIR_NAME,
-                                    paste("/",AROG_ZIP_FILE_NAME, sep=""),
-                                    sep=""),
-                              sep="")
+                                 paste(AROG_DATA_DIR_NAME,
+                                       paste("/",AROG_ZIP_FILE_NAME, sep=""),
+                                       sep=""),
+                                 sep="")
 AROG_DATA_DIR_PATH <- file.path(".", AROG_DATA_DIR_NAME)
 AROG_DATA_FILE_REL_NAME <- file.path(AROG_DATA_DIR_PATH, AROG_ZIP_FILE_NAME)
 AROG_CSV_FILE_NAME <- "immo_data.csv"
@@ -145,7 +145,7 @@ map_na_and_others_to_unknown <- function(data_col, levels_set = c(""),
                                          new_level_name = "unknown") {
   curr_levels <- levels(data_col)
   new_data_col <- ifelse(is.na(data_col) | (curr_levels[data_col] %in% levels_set),
-                   new_level_name, curr_levels[data_col]) %>% factor()
+                         new_level_name, curr_levels[data_col]) %>% factor()
   rm(curr_levels)
   return(new_data_col)
 }
@@ -175,7 +175,7 @@ remove_outliers <- function(data_set, column) {
   
   #First detect the outliers
   col_data <- data_set[, column] %>% pull(column)
-
+  
   #Obtain the min/max limits
   min_max_values <- MIN_MAX_OUTLIER_FILTERS[[column]]
   cat("Considering the allowed", column, "min/max values:",
@@ -241,7 +241,7 @@ wrangle_data <- function(selected_arog_data) {
   clean_arog_data$energyEfficiencyClass <- 
     map_na_and_others_to_unknown(clean_arog_data$energyEfficiencyClass,
                                  new_level_name = "NO_INFORMATION")
-
+  
   #----------------------------------------
   # heatingCosts - 68.2% N/A values
   #----------------------------------------
@@ -333,13 +333,13 @@ wrangle_data <- function(selected_arog_data) {
   #----------------------------------------
   #Set the floor values for "ground_floor" and "raised_ground_floor"
   clean_arog_data$floor <- ifelse(is.na(clean_arog_data$floor) &
-                                  !is.na(clean_arog_data$typeOfFlat) &
+                                    !is.na(clean_arog_data$typeOfFlat) &
                                     (clean_arog_data$typeOfFlat %in%
                                        c("ground_floor", "raised_ground_floor")),
-                                         0, clean_arog_data$floor)  
+                                  0, clean_arog_data$floor)  
   #Set the floor values for "half_basement"
   clean_arog_data$floor <- ifelse(is.na(clean_arog_data$floor) &
-                                  !is.na(clean_arog_data$typeOfFlat) &
+                                    !is.na(clean_arog_data$typeOfFlat) &
                                     (clean_arog_data$typeOfFlat == "half_basement"),
                                   -1, clean_arog_data$floor)  
   
@@ -390,7 +390,7 @@ wrangle_data <- function(selected_arog_data) {
   #    sum(x$serviceCharge == 0)
   # 2496 zero-valued heating cost entries 
   clean_arog_data$serviceCharge <- ifelse(is.na(clean_arog_data$serviceCharge),
-                                         0.0, clean_arog_data$serviceCharge)  
+                                          0.0, clean_arog_data$serviceCharge)  
   
   #----------------------------------------
   # typeOfFlat is not consistent with the floors:
@@ -405,7 +405,7 @@ wrangle_data <- function(selected_arog_data) {
                                   0, clean_arog_data$floor)
   clean_arog_data$floor <- ifelse(clean_arog_data$typeOfFlat == "half_basement",
                                   1, clean_arog_data$floor)
-
+  
   #----------------------------------------
   # Flats with negative floor values
   #----------------------------------------
@@ -432,7 +432,7 @@ wrangle_data <- function(selected_arog_data) {
   #----------------------------------------
   clean_arog_data <- clean_arog_data %>%
     filter(totalRent > 0 )
-
+  
   #----------------------------------------
   # Combining the regio columns
   #----------------------------------------
@@ -459,13 +459,13 @@ wrangle_data <- function(selected_arog_data) {
   # "May19" -> "2019-05-10"
   # "Oct19" -> "2019-10-08"
   clean_arog_data$date <- ifelse(clean_arog_data$date == "Sep18",
-                                  "2018-09-22", clean_arog_data$date)
+                                 "2018-09-22", clean_arog_data$date)
   clean_arog_data$date <- ifelse(clean_arog_data$date == "May19",
-                                  "2019-05-10", clean_arog_data$date)
+                                 "2019-05-10", clean_arog_data$date)
   clean_arog_data$date <- ifelse(clean_arog_data$date == "Oct19",
-                                  "2019-10-08", clean_arog_data$date)
+                                 "2019-10-08", clean_arog_data$date)
   clean_arog_data <- clean_arog_data %>% 
-     mutate(date = ymd(date))
+    mutate(date = ymd(date))
   
   return(clean_arog_data)
 }
@@ -485,7 +485,7 @@ split_train_test_sets <- function(data_set, ratio) {
   #testing parts set the random seed to keep the behavior
   #stable during the development phase, may be removed later
   set.seed(1)
-
+  
   cat("Splitting the data set into the testing and training set with the", ratio, "ratio\n")
   #Split the data set into a training and testing parts
   #The testing set will be about 10% of original data set
@@ -541,7 +541,7 @@ split_train_test_sets <- function(data_set, ratio) {
 create_arog_data <- function() {
   #Ensure that the AROG data is present
   ensure_arog_data()
-
+  
   #Read the raw AROG data from the csv file, if it has not being done yet
   if(!exists("raw_arog_data")){
     cat("Reading data from", AROG_CSV_FILE_REL_NAME, "\n")
@@ -567,7 +567,7 @@ create_arog_data <- function() {
   
   #Clean and pre-process the data
   wrangled_arog_data <- wrangle_data(selected_arog_data)
-
+  
   #Split into modeling and validation sets
   split_arog_data_one <- split_train_test_sets(wrangled_arog_data,
                                                VALIDATION_TO_MODELING_SET_RATIO)
@@ -671,9 +671,9 @@ library(DescTools)
 # TODO: Rund the rent to the integer?
 
 train_dat <- arog_data$training_data #%>%
-  #mutate(totalRent = factor(RoundTo(totalRent, 50)))
+#mutate(totalRent = factor(RoundTo(totalRent, 50)))
 val_dat <- arog_data$validation_data #%>%
-  #mutate(totalRent = factor(RoundTo(totalRent, 50)))
+#mutate(totalRent = factor(RoundTo(totalRent, 50)))
 x_mtx <- train_dat %>% select(-totalRent) %>% data.matrix(.)
 
 #---------------------------
@@ -686,8 +686,25 @@ x_mtx <- train_dat %>% select(-totalRent) %>% data.matrix(.)
 #---------------------------
 # PCA
 #---------------------------
-# x_pca <- prcomp(x_mtx)
-# summary(x_pca)
+x_pca <- prcomp(x_mtx)
+summary(x_pca)
+
+models <- c("glm",
+            #"lda",         #<- Factor totalRent
+            #"naive_bayes", #<- Factor totalRent
+            "svmLinear",
+            "knn",                                     #Requires k parameters range
+            "gamLoess",     #<- reports an internal error
+            #"multinom",    #<- Factor totalRent
+            #"qda",         #<- Factor totalRent
+            "rf",                                     #Requires complexity parameters
+            "adaboost")
+
+pca_model_pred <- x_pca$x[, 1:2]
+fits <- lapply(models, function(model){ 
+  print(model)
+  try(train(pca_model_pred, train_dat$totalRent, method = model))
+}) 
 
 
 #---------------------------
