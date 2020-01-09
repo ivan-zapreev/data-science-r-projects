@@ -1095,22 +1095,26 @@ train_model <- function(data_mtx, exp_res, method, ...) {
   train_res <- list(method = method)
   
   #Train the model, with a time-out
-  withTimeout({
-    #Record the start time
-    train_res <- append(train_res, list(start_time = Sys.time()))
-    try({
+  tryCatch({
+    train_res <- withTimeout({
+      #Record the start time
+      train_res <- append(train_res, list(start_time = Sys.time()))
+      
       #Fit the model from data
       fit_model <- train(data_mtx, exp_res, method = method, ...)
       
       #Record the end time and the result
-      train_res <- append(train_res, list(end_time = Sys.time(), 
-                                          fit_model = fit_model))
-    })
-  }, 
-  timeout = GLOBAL_METHOD_TIME_OUT_SECONDS, onTimeout = "silent")
-  
+      train_res <- append(train_res, list(fit_model = fit_model))
+    }, timeout = GLOBAL_METHOD_TIME_OUT_SECONDS)
+  }, TimeoutException = function(ex) {
+    message("Timeout (", GLOBAL_METHOD_TIME_OUT_SECONDS, 
+            " sec.) while training the '", method, "' model, skipping!")
+  })
+
   #Mark the success flag
-  train_res <- append(train_res, list(success = exists("fit_model")))
+  train_res <- append(train_res, 
+                      list(end_time = Sys.time(), 
+                           success = !is.null(train_res$fit_model)))
   
   #Remove the fit model global if it exists
   ifrm(fit_model)
@@ -1136,19 +1140,22 @@ The model validation is done by the next function:
 #    rmse    - the RMSE score between exp_res and act_res
 #--------------------------------------------------------------------
 evaluate_model <- function(mdl_res, pc_mtx, exp_res) {
-  #Predict the raw data based in the fit model and predictor values
-  act_res <- predict(mdl_res$fit_model, pc_mtx, type = "raw")
-  
-  #Compute the RMSE score
-  rmse <- RMSE(act_res, exp_res)
+  if(mdl_res$success) {
+    #Predict the raw data based in the fit model and predictor values
+    act_res <- predict(mdl_res$fit_model, pc_mtx, type = "raw")
+    
+    #Compute the RMSE score
+    rmse <- RMSE(act_res, exp_res)
+  } else {
+    #Training failed so return the NA results
+    act_res <- NA 
+    rmse    <- NA
+  }
   
   #Create the resulting list and return
-  return(list(mdl_res = mdl_res,
-              pc_mtx    = pc_mtx,
-              exp_res   = exp_res,
-              act_res   = act_res, 
-              rmse      = rmse))
-}
+  return(list(mdl_res = mdl_res, pc_mtx  = pc_mtx,
+              exp_res = exp_res, act_res = act_res, 
+              rmse    = rmse))
 ```
 
 With the functions above t complete *model-train-evaluate* sequence for a `KNN` look as follows:

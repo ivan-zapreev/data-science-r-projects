@@ -46,7 +46,7 @@ TEST_TO_TRAIN_SET_RATIO <- 0.2
 #Define a sequene of lambdas for regularization
 REGULARIZATION_LAMBDAS <- seq(0, 10, 0.25)
 #The modeling method time out in seconds
-GLOBAL_METHOD_TIME_OUT_SECONDS <- 60*60
+GLOBAL_METHOD_TIME_OUT_SECONDS <- 2*60*60
 #The number of principle components to consider
 NUM_PC_TO_CONSIDER <- 2 #Is set to two which explains the 99.3% of data variability
                         #Setting it to 6 will explain the 99.99% of data variability
@@ -726,22 +726,26 @@ train_model <- function(data_mtx, exp_res, method, ...) {
   train_res <- list(method = method)
   
   #Train the model, with a time-out
-  withTimeout({
-    #Record the start time
-    train_res <- append(train_res, list(start_time = Sys.time()))
-    try({
+  tryCatch({
+    train_res <- withTimeout({
+      #Record the start time
+      train_res <- append(train_res, list(start_time = Sys.time()))
+      
       #Fit the model from data
       fit_model <- train(data_mtx, exp_res, method = method, ...)
       
       #Record the end time and the result
-      train_res <- append(train_res, list(end_time = Sys.time(), 
-                                          fit_model = fit_model))
-    })
-  }, 
-  timeout = GLOBAL_METHOD_TIME_OUT_SECONDS, onTimeout = "silent")
-  
+      train_res <- append(train_res, list(fit_model = fit_model))
+    }, timeout = GLOBAL_METHOD_TIME_OUT_SECONDS)
+  }, TimeoutException = function(ex) {
+    message("Timeout (", GLOBAL_METHOD_TIME_OUT_SECONDS, 
+            " sec.) while training the '", method, "' model, skipping!")
+  })
+
   #Mark the success flag
-  train_res <- append(train_res, list(success = exists("fit_model")))
+  train_res <- append(train_res, 
+                      list(end_time = Sys.time(), 
+                           success = !is.null(train_res$fit_model)))
   
   #Remove the fit model global if it exists
   ifrm(fit_model)
@@ -764,18 +768,22 @@ train_model <- function(data_mtx, exp_res, method, ...) {
 #    rmse    - the RMSE score between exp_res and act_res
 #--------------------------------------------------------------------
 evaluate_model <- function(mdl_res, pc_mtx, exp_res) {
-  #Predict the raw data based in the fit model and predictor values
-  act_res <- predict(mdl_res$fit_model, pc_mtx, type = "raw")
-  
-  #Compute the RMSE score
-  rmse <- RMSE(act_res, exp_res)
+  if(mdl_res$success) {
+    #Predict the raw data based in the fit model and predictor values
+    act_res <- predict(mdl_res$fit_model, pc_mtx, type = "raw")
+    
+    #Compute the RMSE score
+    rmse <- RMSE(act_res, exp_res)
+  } else {
+    #Training failed so return the NA results
+    act_res <- NA 
+    rmse    <- NA
+  }
   
   #Create the resulting list and return
-  return(list(mdl_res = mdl_res,
-              pc_mtx    = pc_mtx,
-              exp_res   = exp_res,
-              act_res   = act_res, 
-              rmse      = rmse))
+  return(list(mdl_res = mdl_res, pc_mtx  = pc_mtx,
+              exp_res = exp_res, act_res = act_res, 
+              rmse    = rmse))
 }
 
 ####################################################################
@@ -790,35 +798,6 @@ arog_data <- get_arog_data()
 #02 - Initialize the report data frame thay will be storing all
 #     the required information for the report to be generated
 arog_report <- init_report_data()
-
-# #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-# library(caret)
-# library(randomForest)
-# library(DescTools)
-# 
-# # TODO: Rund the rent to the integer?
-# 
-# train_dat <- arog_data$training_data #%>%
-# #mutate(totalRent = factor(RoundTo(totalRent, 50)))
-# train_mtx <- train_dat %>% select(-totalRent) %>% data.matrix(.)
-# 
-# val_dat <- arog_data$validation_data #%>%
-# #mutate(totalRent = factor(RoundTo(totalRent, 50)))
-# val_mtx <- val_dat %>% select(-totalRent) %>% data.matrix(.)
-# 
-# #---------------------------
-# # Correlations
-# #---------------------------
-# # x_cor <- cor(train_mtx)
-# # x_cor_rnd <- round(x_cor, 3)
-# # image(1:ncol(x_cor_rnd), 1:ncol(x_cor_rnd), x_cor_rnd[,ncol(x_cor_rnd):1])
-# 
-# #---------------------------
-# # PCA
-# #---------------------------
-# x_pca <- prcomp(train_mtx)
-# k <- 2
-# pca_model_pred <- x_pca$x[, 1:k]
 
 #Get the modeling and validation data
 model_set <- arog_data$modeling_data
@@ -865,104 +844,6 @@ svm_mdl_res$rmse
 gam_train_res <- train_model(model_pc_mtx, model_set$totalRent, "gamLoess")
 gam_mdl_res <- evaluate_model(gam_train_res, valid_pc_mtx, valid_set$totalRent)
 gam_mdl_res$rmse
-
-# summary(x_pca)
-# 
-# models <- c("lm",           #<+> 
-#             "glm",          #<+> 
-#             #"lda",         #<-> Factor totalRent
-#             #"naive_bayes", #<-> Factor totalRent
-#             "svmLinear",    #<+> 
-#             "knn",          #<+> Requires k parameters range
-#             "gamLoess",     #<-> Reports an internal error
-#             #"multinom",    #<-> Factor totalRent
-#             #"qda",         #<-> Factor totalRent
-#             "rf",           #<-> Runs too long!
-#             "adaboost")     #<?>
-# 
-# fits <- lapply(models, function(model){ 
-#   print(model)
-#   try(train(pca_model_pred, train_dat$totalRent, method = model))
-# }) 
-# 
-# #----------------------------------
-# #Random Forest
-# #----------------------------------
-# rf_fit <- train(pca_model_pred, 
-#                 train_dat$totalRent,
-#                 method = "Rborist")
-# ggplot(rf_fit$bestTune)
-# rf_fit$bestTune
-# 
-# val_rot_mtx <- sweep(val_mtx, 2, colMeans(val_mtx)) %*% x_pca$rotation
-# val_rot_mtx_pc <- val_rot_mtx[,1:k]
-# totalRent_hat <- predict(rf_fit, val_rot_mtx_pc, type = "raw")
-# RMSE(totalRent_hat, val_dat$totalRent)
-# 
-# #----------------------------------
-# #KNN
-# #----------------------------------
-# knn_fit <- train(pca_model_pred,
-#                  train_dat$totalRent,
-#                  method = "knn",
-#                  tuneGrid = data.frame(k = seq(15, 25, 1)))
-# ggplot(knn_fit)
-# knn_fit$bestTune
-# 
-# val_rot_mtx <- sweep(val_mtx, 2, colMeans(val_mtx)) %*% x_pca$rotation
-# val_rot_mtx_pc <- val_rot_mtx[,1:k]
-# totalRent_hat <- predict(knn_fit, val_rot_mtx_pc, type = "raw")
-# RMSE(totalRent_hat, val_dat$totalRent)
-# 
-# #----------------------------------
-# #Loess
-# #----------------------------------
-# grid <- expand.grid(span = seq(0.15, 0.65, len = 10), degree = 1)
-# train_loess <- train(pca_model_pred,
-#                     train_dat$totalRent,
-#                     method = "gamLoess",
-#                     tuneGrid=grid)
-# ggplot(train_loess, highlight = TRUE)
-# 
-# # ---------------------------
-# # Try out knn: FAILED
-# # ---------------------------
-# # NOTES:
-# #     * Running took more than 7 hours and did not finish
-# # ---------------------------
-# dat <- train_dat[1:nrow(train_dat),]
-# #dat$totalRent <- factor(dat$totalRent)
-# knn_fit <- train(totalRent ~ noParkSpaces + interiorQual +
-#                    condition + floor + heatingType + typeOfFlat +
-#                    hasKitchen + lift + garden + cellar + noRooms +
-#                    balcony + newlyConst,
-#                  method = "knn",
-#                  tuneGrid = data.frame(k = seq(0, 10, 2)),
-#                  data = dat)
-# ggplot(knn_fit)
-# totalRent_hat <- predict(knn_fit, newdata = val_dat)
-# RMSE(totalRent_hat, val_dat$totalRent)
-# 
-# #---------------------------
-# # Try out random forest:
-# #---------------------------
-# # NOTES:
-# #    * Location had to be removed as it can not handle
-# #     categorical predictors with more than 53 categories.
-# #    * confusionMatrix can only be applied to factored values
-# #---------------------------
-# rf_fit <- randomForest(
-# baseRent ~ noParkSpaces + interiorQual +
-#   condition + floor + heatingType + typeOfFlat +
-#   hasKitchen + lift + garden + cellar + noRooms +
-#   balcony + newlyConst,
-# data = train_dat)
-# 
-# totalRent_hat <- predict(rf_fit, newdata = val_dat)
-# RMSE(totalRent_hat, val_dat$totalRent)
-# # confusionMatrix(totalRent_hat, val_dat$totalRent)$overall["Accuracy"]
-
-#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
 #00 - Store the report into the file to be used from the arog_report.Rmd
 store_report_data(arog_report)
