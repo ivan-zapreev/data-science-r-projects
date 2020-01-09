@@ -656,12 +656,12 @@ init_report_data <- function() {
 }
 
 #--------------------------------------------------------------------
-# This function saves an initial report version into the 
+# This function saves a report version into the 
 #     AROG_REPORT_DATA_FILE_NAME
 # file to be used later from the movielens_report.Rmd script
 #--------------------------------------------------------------------
 save_report_data <- function(arog_report) {
-  cat("Saving initial report version into", AROG_REPORT_FILE_NAME, "\n")
+  cat("Saving a report version into", AROG_REPORT_FILE_NAME, "\n")
   save(arog_report, file = AROG_REPORT_FILE_NAME)
 }
 
