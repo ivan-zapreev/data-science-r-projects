@@ -103,6 +103,13 @@ log10_mean <- function(x) {
  2. Summarizes the goal of the project 
  3. Outlines the key steps that were performed; -->
 
+In this report we shall address building of an apartment rental price prediction system. The latter will be based on the `r arog_report$AROG_DATA_SET_NAME` available from:
+
+[`r arog_report$AROG_DATA_SET_SITE_URL`](`r arog_report$AROG_DATA_SET_SITE_URL`).
+
+To reach our goal, we will use supervised machine learning techniques studied within the *"PH125.8x Data Science: Machine Learning"* course (a part of the broader HarvardX *Data Science Professional* certification program). The prediction system will be therefore based on (linear) statistical models trained on the subset of the `r arog_report$AROG_DATA_SET_NAME`.
+
+The remainder of this section first present the data set, then defines the goal of this project more concretely, and finally identifies the main steps to be taken to reach the goal.
 
 ## Dataset overview
 
@@ -123,6 +130,30 @@ The additional data preparation steps will be described in the *"Data wrangling"
 [^3]: Please consider reading the *"Project goal"* section for an exact goal formulation.
 
 ## Project goal
+The goal of this project is to build a apartment rental-price prediction system for German cities. The model is to be trained and validated using the data from `r arog_report$AROG_DATA_SET_NAME`. The data is therefore to be split into a `modeling` and `validation` sets which will be defined in the *"Data wrangling"* section.
+
+The system evaluation will be done using the Residual Mean Squared error (`RMSE`) which, similarly to a standard deviation, can be interpreted as: *the typical error we make when predicting a rent price*. In other words, `RMSE` will indicate an approximate amount of Euros we are on average off in our rental price predictions.
+
+**Definition:** (`RMSE`)
+
+Let $r_{o}$ be the true rental price for an offer $o$, $N_{o}$ be the number of offers, and $\hat{r}_{o}$ be our prediction, then:
+
+\[
+  RMSE=\sqrt{\sum_{m=1}^{N_{o}}(r_{o}-\hat{r}_{o})^2}
+\]
+
+The definition above trivially translates into the following `R` function:
+
+```{r}
+RMSE <- function(true_ratings, predicted_ratings){
+    sqrt(mean((true_ratings - predicted_ratings)^2))
+  }
+```
+
+```{r, echo=F}
+TARGET_RMSE <- 50
+```
+The ultimate goal of the project is to provide a statistical model, solely based on the modeling set, that on the `validation` set will be able to predict apartment rental prices with `RMSE` $\leq$ `TARGET_RMSE` = `r TARGET_RMSE`. The way achieve that goal will be explained in the *"Modeling approach"* section of this document.
 
 ## Execution plan
 
@@ -133,9 +164,9 @@ Let us now briefly outline the main steps to be performed to reach the previousl
 2. **Analyze the dataset** -- see the *"Dataset analysis"* section:
     + Perform data exploration and visualization; summarize insights on the data.
 3. **Describe the modeling approach** -- see the *"Modeling approach"* section:
-    + Consider the insights of the data analysis; suggest the way for building the prediction model.
+    + Consider the insights of the data analysis; suggest the way obtain a prediction model.
 4. **Present modeling results** -- see the  *"Results"* section:
-    + Train the model on the `modeling` set; analyze the training results; evaluate on the `validation` set.
+    + Train the model(s); evaluate the model(s); analyze the results.
 5. **Provide concluding remarks** -- see the *"Conclusions"* section:
     + Summarize the results; mention any approach limitations; outline possible future improvements.
 
@@ -1196,7 +1227,6 @@ Check for introducing any bias by data wrangling.
 Use model ensembles.
 Use more principle components.
 Factor the totalRent and use e.g. `knn3`.
-
 
 # Appendix A: The complete list of data set columns
 
