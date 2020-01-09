@@ -8,7 +8,6 @@ toc: true
 ---
 
 ```{r setup, include=FALSE}
-
 if(!require(tidyr)) install.packages("tidyr", repos = "http://cran.us.r-project.org")
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
@@ -38,10 +37,25 @@ options(digits=7)
 
 MOVIELENS_DATA_FILE_NAME <- "arog_data.rda"
 MOVIELENS_REPORT_FILE_NAME <- "arog_report.rda"
+GENERATOR_SCRIPT_NAME <- "apartment_rental_project.R"
 
-#Load the files
-load(MOVIELENS_DATA_FILE_NAME)
-load(MOVIELENS_REPORT_FILE_NAME)
+#Safe Load the files
+safe_load_file <- function(file_name) {
+  if(file.exists(file_name)){
+    load(file_name)
+  } else {
+      message("The ", file_name, 
+              " file is missing, please run the ", 
+              GENERATOR_SCRIPT_NAME, " script first!")
+  }
+}
+safe_load_file(MOVIELENS_DATA_FILE_NAME)
+safe_load_file(MOVIELENS_REPORT_FILE_NAME)
+```
+
+
+```{r, echo=F}
+#This R chunk only contains helper functions
 
 #--------------------------------------------------------------------
 # This function counts the number of N/A entries in the columns of 
@@ -1172,23 +1186,20 @@ The model validation then can be performed by using:
 ```{r, eval = FALSE}
 #--------------------------------------------------------------------
 # The model evaluation function takes the:
-#     mdl_res - the modeling results with the fit model to make predictions
+#     train_res - the model training results with the fit model to make predictions
 #     valid_pc_mtx - the validation set data matrix in PC space
-#     exp_res - the actual validation set values
 # Once the model predicts the values are the RMSE score is computed.
 # The result of the function is the list with the following elements:
-#    mdl_res - the modeling results
-#    valid_pc_mtx  - the validation set data matrix in PC space
+#    exp_res - the expected result values, i.e. valid_pc_mtx[,1]
 #    act_res - the actually predicted values
 #    rmse    - the RMSE score between valid_pc_mtx[,1] and act_res
 #--------------------------------------------------------------------
-evaluate_model <- function(mdl_res, valid_pc_mtx) {
-  if(mdl_res$success) {
+evaluate_model <- function(train_res, valid_pc_mtx) {
+  if(train_res$success) {
     #Predict the raw data based on the fit model and predictors
-    act_res <- predict(mdl_res$fit_model, 
+    act_res <- predict(train_res$fit_model, 
                        valid_pc_mtx[,2:ncol(valid_pc_mtx)], 
                        type = "raw")
-    
     #Compute the RMSE score
     rmse <- RMSE(act_res, valid_pc_mtx[,1])
   } else {
@@ -1198,10 +1209,8 @@ evaluate_model <- function(mdl_res, valid_pc_mtx) {
   }
   
   #Create the resulting list and return
-  return(list(mdl_res      = mdl_res, 
-              valid_pc_mtx = valid_pc_mtx,
-              act_res      = act_res,
-              rmse         = rmse))
+  return(list(exp_res = valid_pc_mtx[, 1],
+              act_res = act_res, rmse = rmse))
 }
 ```
 

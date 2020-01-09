@@ -633,7 +633,8 @@ get_arog_data <- function() {
 # This function creates the initial report to be filled
 #--------------------------------------------------------------------
 init_report_data <- function() {
-  return(list(
+  #Initialize the report data
+  arog_report <- list(
     AROG_CSV_FILE_NAME = AROG_CSV_FILE_NAME,
     AROG_DATA_SET_NAME = AROG_DATA_SET_NAME,
     AROG_DATA_SET_SITE_URL = AROG_DATA_SET_SITE_URL,
@@ -645,15 +646,22 @@ init_report_data <- function() {
     MIN_MAX_OUTLIER_FILTERS = MIN_MAX_OUTLIER_FILTERS,
     TRAIN_CPU_TIME_OUT_SECONDS = TRAIN_CPU_TIME_OUT_SECONDS,
     KNN_K_SEQUENCE = KNN_K_SEQUENCE
-  ))
+  )
+  
+  #Save the initial version into the file
+  save_report_data(arog_report)
+  
+  #Return the initial report
+  return(arog_report)
 }
 
 #--------------------------------------------------------------------
-# This function stores the final report into the 
+# This function saves an initial report version into the 
 #     AROG_REPORT_DATA_FILE_NAME
 # file to be used later from the movielens_report.Rmd script
 #--------------------------------------------------------------------
-store_report_data <- function(arog_report) {
+save_report_data <- function(arog_report) {
+  cat("Saving initial report version into", AROG_REPORT_FILE_NAME, "\n")
   save(arog_report, file = AROG_REPORT_FILE_NAME)
 }
 
@@ -797,35 +805,31 @@ train_model <- function(model_pc_mtx, method, ...) {
 
 #--------------------------------------------------------------------
 # The model evaluation function takes the:
-#     mdl_res - the modeling results with the fit model to make predictions
+#     train_res - the model training results with the fit model to make predictions
 #     valid_pc_mtx - the validation set data matrix in PC space
 # Once the model predicts the values are the RMSE score is computed.
 # The result of the function is the list with the following elements:
-#    mdl_res - the modeling results
 #    exp_res - the expected result values, i.e. valid_pc_mtx[,1]
 #    act_res - the actually predicted values
 #    rmse    - the RMSE score between valid_pc_mtx[,1] and act_res
 #--------------------------------------------------------------------
-evaluate_model <- function(mdl_res, valid_pc_mtx) {
-  if(mdl_res$success) {
+evaluate_model <- function(train_res, valid_pc_mtx) {
+  if(train_res$success) {
     #Predict the raw data based on the fit model and predictors
-    act_res <- predict(mdl_res$fit_model, 
+    act_res <- predict(train_res$fit_model, 
                        valid_pc_mtx[,2:ncol(valid_pc_mtx)], 
                        type = "raw")
-    
     #Compute the RMSE score
     rmse <- RMSE(act_res, valid_pc_mtx[,1])
   } else {
     #Training failed so return the NA results
-    act_res <- NA 
+    act_res <- NA
     rmse    <- NA
   }
   
   #Create the resulting list and return
-  return(list(mdl_res  = mdl_res, 
-              exp_res  = valid_pc_mtx[, 1],
-              act_res  = act_res,
-              rmse     = rmse))
+  return(list(exp_res = valid_pc_mtx[, 1],
+              act_res = act_res, rmse = rmse))
 }
 
 #--------------------------------------------------------------------
@@ -867,7 +871,7 @@ train_model_and_report <- function(arog_report, pc_space_data, method, ...) {
   cat("The '", method,"' model RMSE score is", eval_res$rmse,"\n")
   
   #Store the report into the file to be used from the arog_report.Rmd
-  store_report_data(arog_report)
+  save_report_data(arog_report)
   
   #Return the updated report
   return(arog_report)
