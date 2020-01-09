@@ -95,7 +95,6 @@ nr_floors_summary <- function(app_type, data_set = arog_data$selected_data) {
 log10_mean <- function(x) {
   log10(mean(10 ^ x)) 
 }
-
 ```
 
 # Introduction
@@ -567,7 +566,7 @@ In this section we shall use data visualization and other techniques to investig
 1. Possible `timing` effects
 2. Possible `location` effects
 3. Predictor's correlation
-4. Princicple component analysis
+4. Principle component analysis
 
 Eventually, we shall conclude the section with a short summary of our findings.
 
@@ -655,18 +654,25 @@ arog_data$wrangled_data %>%
 ```
 As we see the data seems to be distributed similarly, moreover the does not seem to be any trend in average `totalRent` per `date`, as computed with `geom_smooth(method="lm")`:
 ```{r, echo = F, warning = F, out.height = "35%", fig.align="center"}
-arog_data$wrangled_data %>%
-  group_by(date) %>% 
-  ggplot(aes(x=date, y = totalRent)) +
-  geom_point(alpha=0.05) +
-  geom_smooth(method="lm") + 
-  scale_y_log10(limits = c(100,10000)) + 
-  labs(x="Scraping dates", y="Total rent values") +
-  ggtitle("Total rent values per date") +
-  theme(plot.title = element_text(hjust = 0.5, face="bold")) +
-  theme_bw()
+  #Set some plotting limits, for visibility reasons
+  NUM_PLOT_SAMPLES <- 5000
+  MIN_Y_VAL <- 100
+  MAX_Y_VAL <- 10000
+  
+  #Plot the total rent values per date
+  arog_data$wrangled_data %>%
+    group_by(date) %>% 
+    sample_n(NUM_PLOT_SAMPLES) %>%
+    ggplot(aes(x=date, y = totalRent)) +
+    geom_jitter(width = 30, alpha=0.1) +
+    geom_smooth(method="lm") + 
+    scale_y_log10(limits = c(MIN_Y_VAL,MAX_Y_VAL)) + 
+    labs(x="Scraping dates", y="Total rent values") +
+    ggtitle("Total rent values per date") +
+    theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+    theme_bw()
 ```
-There does not seem to be any global[^9] `timing` effect in `totalRent` related to the scraping date.
+There does not seem to be any global[^9] `timing` effect in `totalRent` related to the scraping date. Please note that in the plot above, for better visualization, we took a `r NUM_PLOT_SAMPLES` sub-sample of the data and limited the $y$ axis range by [`r MIN_Y_VAL`, `r MAX_Y_VAL`]. The latter did not influence the `"lm"` computed trend.
 
 [^9]: There may be some location specific timing effects, but we do not consider them due to the lack of time.
 
@@ -689,24 +695,24 @@ We answer this question based on the analysis of "Average `totalRent` per `locat
 Let us consider the variability of the `totalRent`, for several randomly chosen locations, with $> 100$ offers:
 
 ```{r, echo = F, out.height = "35%", fig.align="center"}
-set.seed(6)
-locations <- offers_per_location %>% 
-  filter(cnt > 100) %>% 
-  pull(location) %>% unique()
-sampled_locations <- sample(locations, 10)
+  set.seed(6)
+  locations <- offers_per_location %>% 
+    filter(cnt > 100) %>% 
+    pull(location) %>% unique()
+  sampled_locations <- sample(locations, 10)
 
-#Plot the sparse matrix
-left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
-  filter(location %in% sampled_locations) %>% 
-  mutate(location = str_replace(location, ".*[_,/]","")) %>%
-  ggplot(aes(x=location, y=totalRent, fill=cnt)) +
-  scale_y_log10() + 
-  geom_boxplot(outlier.colour = "red", outlier.alpha = 0.3,
-               outlier.shape = 1, outlier.size = 1) +
-  labs(x="Selected locations", y="Total rent values") +
-  ggtitle("Total rent variability between locations") +
-  theme(plot.title = element_text(hjust = 0.5, face="bold"),
-        axis.text.x = element_text(angle = 12))
+  #Plot the sparse matrix
+  left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
+    filter(location %in% sampled_locations) %>% 
+    mutate(location = str_replace(location, ".*[_,/]","")) %>%
+    ggplot(aes(x=location, y=totalRent, fill=cnt)) +
+    scale_y_log10() + 
+    geom_boxplot(outlier.colour = "red", outlier.alpha = 0.3,
+                 outlier.shape = 1, outlier.size = 1) +
+    labs(x="Selected locations", y="Total rent values") +
+    ggtitle("Total rent variability between locations") +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"),
+          axis.text.x = element_text(angle = 12))
 ```
 
 **Conclusion:** Locations differ quite significantly in their `totalRent` -- this is a `location` effect.
@@ -716,20 +722,27 @@ left_join(arog_data$wrangled_data, offers_per_location, by="location") %>%
 Let us plot the `totalRent` per location flat count, ordered by the count. Also to show the trend we will use `ggplot` with `geom_smooth(method = 'gam')`.
 
 ```{r, echo = F, warning = F, out.height = "35%", fig.align="center"}
-offers_per_location <- arog_data$wrangled_data %>%
+  offers_per_location <- arog_data$wrangled_data %>%
   group_by(location) %>% summarise(cnt = n())
   
-left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
-  arrange(cnt) %>%
-  ggplot(aes(x=cnt, y=totalRent)) +
-  geom_point(alpha=0.05) +
-  scale_x_log10() +
-  scale_y_log10(limits = c(100, 10000)) +
-  geom_smooth(method = 'gam') +
-  labs(x="Number of flats per location", y="Flat total rent") +
-  ggtitle("The total rent vs. flats per location") +
-  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+  #Set some plotting limits, for visibility reasons
+  NUM_PLOT_SAMPLES <- 15000
+  MIN_Y_VAL <- 100
+  MAX_Y_VAL <- 10000
+  
+  left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
+    arrange(cnt) %>%
+    sample_n(NUM_PLOT_SAMPLES) %>%
+    ggplot(aes(x=cnt, y=totalRent)) +
+    geom_jitter(width=0.05, alpha=0.1) +
+    scale_x_log10() +
+    scale_y_log10(limits = c(MIN_Y_VAL, MAX_Y_VAL)) +
+    geom_smooth(method = 'gam') +
+    labs(x="Number of flats per location", y="Flat total rent") +
+    ggtitle("The total rent vs. flats per location") +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
+Please note that in the plot above, for better visualization, we took a `r NUM_PLOT_SAMPLES` sub-sample of the data and limited the $y$ axis range by [`r MIN_Y_VAL`, `r MAX_Y_VAL`]. The latter did not influence the `"gam"` computed trend.
 
 **Conclusion:** There is a trend in that the places with more flat offers have on-average lower `totalRent` values - this is a `number of offers` effect.
 
@@ -739,69 +752,71 @@ NUM_TOP_BOTTOM_ROWS <- 300
 ```
 Let us the maximum and minimum `totalRent` values relative to the flat count per `location`. In other words, each `location` has a number of flats offered. If we now combine the flat offers per location into a single totally ordered *flat-offers range*, we can plot how many locations there are with that many orders. Or we can plot the `totalRent` values offered in locations with the same number of flats. The latter will help us to see if the extreme `totalRent` values, like `r NUM_TOP_BOTTOM_ROWS` `top` and `r NUM_TOP_BOTTOM_ROWS` `bottom` priced flats are more likely to be encountered in locations with lower or larger number of flat offers.
 ```{r, echo = F}
-#Get the flats with the top 100 totalRent values
-top_total_rent <- arog_data$wrangled_data %>%
-  left_join(., offers_per_location, by="location") %>%
-  arrange(desc(totalRent)) %>% 
-  slice(1:NUM_TOP_BOTTOM_ROWS) %>%
-  select(cnt, totalRent, location) %>%
-  mutate(Type = "Top rates")
-
-#Get the flats with the bottom 100 totalRent values
-bottom_total_rent <- arog_data$wrangled_data %>%
-  left_join(., offers_per_location, by="location") %>%
-  arrange(totalRent) %>% 
-  slice(1:NUM_TOP_BOTTOM_ROWS) %>%
-  select(cnt, totalRent, location) %>% 
-  mutate(Type = "Bottom rates")
+  #Get the flats with the top 100 totalRent values
+  top_total_rent <- arog_data$wrangled_data %>%
+    left_join(., offers_per_location, by="location") %>%
+    arrange(desc(totalRent)) %>% 
+    slice(1:NUM_TOP_BOTTOM_ROWS) %>%
+    select(cnt, totalRent, location) %>%
+    mutate(Type = "Top rates")
+  
+  #Get the flats with the bottom 100 totalRent values
+  bottom_total_rent <- arog_data$wrangled_data %>%
+    left_join(., offers_per_location, by="location") %>%
+    arrange(totalRent) %>% 
+    slice(1:NUM_TOP_BOTTOM_ROWS) %>%
+    select(cnt, totalRent, location) %>% 
+    mutate(Type = "Bottom rates")
 ```
 If we indicate `top` and `bottom` priced flats on the plot then we can observe:
 ```{r, echo = F, warning = F, out.height = "35%", fig.align="center"}
-left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
-  arrange(cnt) %>%
-  ggplot(aes(x=cnt, y=totalRent)) +
-  geom_point(alpha=0.05) +
-  scale_x_log10() +
-  scale_y_log10() +
-  geom_point(data = top_total_rent, aes(cnt, totalRent), color="blue") +
-  geom_point(data = bottom_total_rent, aes(cnt, totalRent), color="red") +
-  labs(x="Number of flats per location", y="Flat total rent") +
-  ggtitle("The top/bottom total rent vs. flats per location") +
-  theme(plot.title = element_text(hjust = 0.5, face="bold"))
-```
-that it seems that the `top`/`bottom` priced rentals are, almost uniformly, spread all over the *flat-offers range*. 
-```{r, echo = F}
-#Given a list of locations this function computes
-#the total number of flat offers
-cnt_in_all_locs <- function(locations) {
-  locations <- unique(locations)
-  sum <- 0
-  for(loc in locations) {
-    val <- offers_per_location %>% filter(location == loc) %>% pull(cnt)
-    sum <- sum + val
-  }
-  return(sum)
-}
-
-# This function plots the number of outliers versus
-# total number of offers on the flat offers per
-# location range.
-plot_outlier_set <- function(cnt_to_outliers_cnt, type) {
-  #Plot the data
-  title <- paste(paste("The",type),"rent counts vs. flats per location")
-  cnt_to_outliers_cnt %>%
-    ggplot(aes(x=cnt)) + 
+  left_join(arog_data$wrangled_data, offers_per_location, by="location") %>% 
+    arrange(cnt) %>%
+    sample_n(NUM_PLOT_SAMPLES) %>%
+    ggplot(aes(x=cnt, y=totalRent)) +
+    geom_jitter(width=0.05, alpha=0.25) +
     scale_x_log10() +
     scale_y_log10() +
-    geom_area(aes(y=total_cnt, fill=I("green")), 
-              color= "black", linetype="solid", alpha=0.3) +
-    geom_area(aes(y=outliers_cnt, fill=I("red")),
-              color= "black", linetype="solid", alpha=0.3) +
-    labs(x="Flats per location", y="Number of totalRent values") +
-    ggtitle(title) +
-    theme(plot.title = element_text(hjust = 0.5, face="bold")) +
-    scale_fill_discrete(name = "Per location", labels = c("Total #offers", "#Offer outliers"))
-}
+    geom_point(data = top_total_rent, aes(cnt, totalRent), color="blue") +
+    geom_point(data = bottom_total_rent, aes(cnt, totalRent), color="red") +
+    labs(x="Number of flats per location", y="Flat total rent") +
+    ggtitle("The top/bottom total rent vs. flats per location") +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"))
+```
+that it seems that[12^] the `top`/`bottom` priced rentals are, almost uniformly, spread all over the *flat-offers range*. 
+[^12]: Please note that in this plot, for better visualization, we took a `r NUM_PLOT_SAMPLES` sub-sample of the data.
+```{r, echo = F}
+  #Given a list of locations this function computes
+  #the total number of flat offers
+  cnt_in_all_locs <- function(locations) {
+    locations <- unique(locations)
+    sum <- 0
+    for(loc in locations) {
+      val <- offers_per_location %>% filter(location == loc) %>% pull(cnt)
+      sum <- sum + val
+    }
+    return(sum)
+  }
+  
+  # This function plots the number of outliers versus
+  # total number of offers on the flat offers per
+  # location range.
+  plot_outlier_set <- function(cnt_to_outliers_cnt, type) {
+    #Plot the data
+    title <- paste(paste("The",type),"rent counts vs. flats per location")
+    cnt_to_outliers_cnt %>%
+      ggplot(aes(x=cnt)) + 
+      scale_x_log10() +
+      scale_y_log10() +
+      geom_area(aes(y=total_cnt, fill=I("green")), 
+                color= "black", linetype="solid", alpha=0.3) +
+      geom_area(aes(y=outliers_cnt, fill=I("red")),
+                color= "black", linetype="solid", alpha=0.3) +
+      labs(x="Flats per location", y="Number of totalRent values") +
+      ggtitle(title) +
+      theme(plot.title = element_text(hjust = 0.5, face="bold")) +
+      scale_fill_discrete(name = "Per location", labels = c("Total #offers", "#Offer outliers"))
+  }
 ```
 To get a better view on data, considering `top` and total `totalRent` counts versus the *flat-offers range*:
 ```{r, echo = F, out.height = "35%", fig.align="center"}
@@ -825,16 +840,16 @@ The total count is computed as the sum of offers in the locations with the same 
 The number of `bottom` outliers is $\approx$ uniform across the *flat-offers range*. The number of `top` outliers looks somewhat biased to be larger for locations with more offers. Let us plot the outliers to total ratio:
 
 ```{r, echo = F, out.height = "35%", fig.align="center"}
-ggplot() + 
-  geom_point(data = bot_counts, 
-            aes(x=cnt, y=outliers_cnt/total_cnt, color="blue")) +
-  geom_point(data = top_counts,
-            aes(x=cnt, y=outliers_cnt/total_cnt, color= "red")) + 
-  scale_x_log10() + scale_y_sqrt() +
-  scale_color_discrete(name = "Legend:", labels = c("% Bottom outliers", "% Top outliers")) +
-  labs(x="Percent of outliers", y="Flats per location") +
-  ggtitle("") +
-  theme(plot.title = element_text(hjust = 0.5, face="bold"))
+  ggplot() + 
+    geom_point(data = bot_counts, 
+              aes(x=cnt, y=outliers_cnt/total_cnt, color="blue")) +
+    geom_point(data = top_counts,
+              aes(x=cnt, y=outliers_cnt/total_cnt, color= "red")) + 
+    scale_x_log10() + scale_y_sqrt() +
+    scale_color_discrete(name = "Legend:", labels = c("% Bottom outliers", "% Top outliers")) +
+    labs(x="Flats per location", y="Percent of outliers") +
+    ggtitle("Percent of outliers vs. flats per location") +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"))
 ```
 The plot above has, even though contains quite some "noise" for $50$-$200$ flats per location, indicates the common trend of having proportionally less outliers in locations with more rental offers.
 
@@ -852,31 +867,33 @@ setdiff(names(arog_data$wrangled_data), "totalRent")
 As we have discussed in the `timing` effects  section the `date` column seems to be eligible for exclusion. However, to give this a more formal ground and also to reduce the number of predictors even further let us consider the correlation matrix of the training data columns:
 
 ```{r}
-#First create the predictors matrix, from the wrangled data
-predictors_mtx <- arog_data$wrangled_data %>% 
-  select(-totalRent) %>% 
-  data.matrix(.)
-
-#Next compute the correlations matrix and round off the values
-corr_mtx <- predictors_mtx %>%
-  cor(.) %>% round(., 3)
+  #First create the predictors matrix, from the wrangled data
+  predictors_mtx <- arog_data$wrangled_data %>% 
+    select(-totalRent) %>% 
+    data.matrix(.)
+  
+  #Next compute the correlations matrix and round off the values
+  corr_mtx <- predictors_mtx %>%
+    cor(.) %>% round(., 3)
 ```
 When visualized, we see that there is quite a few predictors with strong correlation:
 
 ```{r, echo = F, fig.align="center"}
-idx_seq <- 1:num_predictors
-image(idx_seq, idx_seq,
-      corr_mtx[num_predictors:1,],
-      useRaster=TRUE,
-      axes=FALSE,
-      xlab="", ylab="",
-      xaxs="r", yaxs="r") %>%
-    abline(h = idx_seq + 0.5, v = idx_seq + 0.5, col = "grey") %>%
-    title(main = "Predictor columns correlation matrix",
-          xlab="Predictor idx", ylab="Predictor idx", line = 1)
-    axis(2, at=idx_seq, labels=as.character(num_predictors:1), lwd=0, pos=0.5)
-    axis(3, at=idx_seq, labels=as.character(idx_seq), lwd=0, pos=20.15)
+  #Plot the correlation values as an image
+  idx_seq <- 1:num_predictors
+  image(idx_seq, idx_seq,
+        corr_mtx[num_predictors:1,],
+        useRaster=TRUE,
+        axes=FALSE,
+        xlab="", ylab="",
+        xaxs="r", yaxs="r") %>%
+      abline(h = idx_seq + 0.5, v = idx_seq + 0.5, col = "grey") %>%
+      title(main = "Predictor columns correlation matrix",
+            xlab="Predictor idx", ylab="Predictor idx", line = 1)
+      axis(2, at=idx_seq, labels=as.character(num_predictors:1), lwd=0, pos=0.5)
+      axis(3, at=idx_seq, labels=as.character(idx_seq), lwd=0, pos=20.15)
 
+  #Put the correlation values into the image for better plot readability
   for(i in 1:length(idx_seq)){ 
     for(j in 1:length(idx_seq)){
         text(x=length(idx_seq) +1 - i, y=j, as.character(corr_mtx[j,i]), cex = 0.45, col = "black", font=2)
@@ -891,17 +908,19 @@ Having highly correlated columns implies that we could use less predictors to bu
 
 As motivated by the correlation analysis above, here we will use the Principle Component Analysis (PCA) to see if we have a distance preserving transformation of our data that gives us a new feature-space basis in which most of the data variability is explained by fewer predictors:
 ```{r}
-pca_result <- prcomp(predictors_mtx)
-summary(pca_result)
+  #Run the PCA analysis
+  pca_result <- prcomp(predictors_mtx)
+  #Report the summary
+  summary(pca_result)
 ```
 As one can see from the PCA summary above, according to Cumulative Proportion of Variance, it shall suffice to use the first two principle components (`PC1`, and `PC2`) to explain $\approx 99.3$% of the data.
 
 ## Data analysis summary
-In the *"Data analysis"* section we have analyzed our data with respect to possible `timing`, and `location` effects. In addition, to reduce the number of predictors we've performed predictor's correlation and princicple component analysis. The findings of this section can be summarized as follows.
+In the *"Data analysis"* section we have analyzed our data with respect to possible `timing`, and `location` effects. In addition, to reduce the number of predictors we've performed predictor's correlation and principle component analysis. The findings of this section can be summarized as follows.
 
 ### Data effects:
 
-In case we are ti build our own statistical model, as opposed using one of the already available via the `cared` package of `R`, we should:
+In case we are to build our own statistical model, as opposed using one of the already available via the `cared` package of `R`, we should:
 
 1. The `timing` effect is not confirmed:
     + We can ignore the `date` column and consider the joint statistics for all the dates.
@@ -917,14 +936,135 @@ Due to a high correlation of multiple predictors we can significantly reduce the
 # Modeling approach
 <!-- A modeling approach section that explains the modeling approach -->
 
+To begin, let us recall the project's goal and one important data observation gained:
 
+* **Goal**: Build a prediction model for the `totalRent` values with an `RMSE` score $\leq 50$;
+* **Data observation**: About $99.3$% data variability is in the first two principle components;
+
+Let us make a scatter plot of `PC1` vs `PC2` indicating the corresponding `totalRent` values with color:
+
+```{r, echo = F, out.height = "35%", fig.align="center"}
+  # This function linearly shifts the PC vector to the 
+  # positive values for the sake of log scale plotting
+  log_scale_shift <- function(pc) {
+      min_pc <- min(pc)
+    if(min_pc <= 0) {
+      pc <- pc + abs(min_pc) + 1
+    }
+    return(pc)
+  }
+    
+  #Set some plotting limits, for visibility reasons
+  NUM_PLOT_SAMPLES <- 5000
+  MIN_Y_VAL <- 70
+  MAX_Y_VAL <- 10000
+
+  #Plot the PC values with the color defined by the total rent value
+  set.seed(1)
+  data.frame(PC1 = log_scale_shift(pca_result$x[,1]),
+             PC2 = log_scale_shift(pca_result$x[,2]),
+             totalRent = arog_data$wrangled_data$totalRent) %>%
+    sample_n(NUM_PLOT_SAMPLES) %>% 
+    ggplot(aes(PC1, PC2, color=log10(totalRent))) +
+    scale_y_log10(limits=c(MIN_Y_VAL, MAX_Y_VAL)) +
+    geom_point() + scale_colour_gradientn(colours = rainbow(100)) +
+    labs(x="PC1 values", y="PC2 values") +
+    ggtitle("totalRent values clasterization vs. PC1 & PC2") +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"))
+```
+Here, for better visualization, we:
+
+* Take a `r NUM_PLOT_SAMPLES` sub-sample of data;
+* Limit the `PC2` range by [`r MIN_Y_VAL`,`r MAX_Y_VAL`];
+* Linearly shift both `PC1` and `PC2` to the positive half-space;
+* Use log10 scale for both `PC1` and `PC2`;
+
+From the plot above, there is a clear clasterization of the `totalRent` values. However, its structure is intricate and is not likely to be captured, with desired accuracy, with a simple (linear) regression models. Thus, instead of creating a new Bayesian model, we shall attempt using the existing ones that can be trained via the `caret` package of `R`. Given that the `totalRent` column is numeric, we will consider the following models[^13]:
+
+* `"lm"` -- Linear Regression
+* `"glm"` -- Generalized Linear Model
+* `"svmLinear"` -- Support Vector Machines with Linear Kernel
+* `"knn"` -- k-Nearest Neighbor Classification
+* `"gamLoess"` -- Generalized Additive Model using LOESS
+* `"Rborist"` -- Random Forest[^14]
+
+[^13]: For more information see also the [list of caret's Available Models](https://topepo.github.io/caret/available-models.html).
+[^14]: This is a high-performance implementation of a random forest model `"rf"`
+
+The algorithms above will be run with the default parameters, unless tuning grid parameters are required. Therefore we will consider the entire `modeling` set, as any cross-validation will be done within the `train(.)` method of the `caret` package. Last but not least, we will only use the first two principle components of the available predictors data.
+
+The model training will be done by the next function:
+```{r, eval = FALSE}
+  #--------------------------------------------------------------------
+  #
+  #--------------------------------------------------------------------
+  train_model <- function(predictors_mtx, totalRent, method, ...) {
+    #Train and return the model, with passing
+    #through additional method parameters
+    return(train(predictors_mtx,
+                 totalRent,
+                 method = method,
+                 ...))
+  }
+```
+
+The model validation will be done by the next function:
+```{r, eval = FALSE}
+  #--------------------------------------------------------------------
+  #
+  #--------------------------------------------------------------------
+  evaluate_model <- function(fit_model, predictors_mtx, totalRent) {
+    #Predict the raw data based in the fit model and predictor values
+    totalRent_hat <- predict(knn_fit, predictors_mtx, type = "raw")
+
+    #Compute and return the RMSE score
+    return(RMSE(totalRent_hat, totalRent))
+  }
+```
+
+The predictors matrix will be prepared by the next function:
+```{r, eval = FALSE}
+  #--------------------------------------------------------------------
+  #
+  #--------------------------------------------------------------------
+  prepare_predictors <- function(pca_result, data_set, num_pc) {
+    #Compute the full matrix from the data set by:
+    # 1. Removing the totalRent column
+    # 2. Converting to numeric matrix
+    full_mtx <- data_set %>%
+      select(-totalRent) %>%
+      data.matrix(.)
+    
+    #Zero-center the columns, and then rotate
+    rot_mtx <- sweep(full_mtx, 2, colMeans(val_mtx)) %*% pca_result$rotation
+
+    #Only return the required principle component columns
+    return(rot_mtx[,1:num_pc])
+  }
+```
+
+Any models that will fail to be trained within $1$ hour on the hardware at hand:
+```
+    Model Name: MacBook Pro
+    Model Identifier: MacBookPro11,4
+    Processor Name: Intel Core i7
+    Processor Speed: 2,2 GHz
+    Number of Processors: 1
+    Total Number of Cores: 4
+    L2 Cache (per Core): 256 KB
+    L3 Cache: 6 MB
+    Memory: 16 GB
+    Boot ROM Version: 194.0.0.0.0
+    SMC Version (system): 2.29f24
+```
+will be discarded from further user.
+
+All the additional model parameters, if required, will be presented in the *"Results"* section of this report.
 
 # Results
 <!-- A results section that:
  1. Presents the modeling results 
  2. Discusses the model performance -->
-
-
 
 # Conclusions
 <!-- A conclusion section that:
@@ -935,6 +1075,10 @@ Due to a high correlation of multiple predictors we can significantly reduce the
 ## Future work
 
 Check for introducing any bias by data wrangling.
+Use model ensembles.
+Use more principle components.
+Factor the totalRent and use e.g. `knn3`.
+
 
 # Appendix A: The complete list of data set columns
 

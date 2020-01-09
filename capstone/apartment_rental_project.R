@@ -3,15 +3,23 @@
 ####################################################################
 options(digits=10)
 
+#Data utility packages
 if(!require(tidyr)) install.packages("tidyr", repos = "http://cran.us.r-project.org")
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
-if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
 if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
-if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
 
+#Modelling packages
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(Rborist)) install.packages("Rborist", repos = "http://cran.us.r-project.org")
+if(!require(class)) install.packages("class", repos = "http://cran.us.r-project.org")
+if(!require(gam)) install.packages("gam", repos = "http://cran.us.r-project.org")
+if(!require(kernlab)) install.packages("kernlab", repos = "http://cran.us.r-project.org")
+if(!require(mgcv)) install.packages("mgcv", repos = "http://cran.us.r-project.org")
+
+#Libraries to be loaded
 library(tidyverse)
 library(tidyr)
 library(lubridate)
@@ -20,7 +28,6 @@ library(caret)
 library(dslabs)
 library(data.table)
 library(dplyr)
-library(lubridate)
 
 ####################################################################
 # Section to define global variables
@@ -577,12 +584,13 @@ create_arog_data <- function() {
                                                TEST_TO_TRAIN_SET_RATIO)
   
   #Return the resulting sets
-  return(list(raw_data       = raw_arog_data,
-              selected_data  = selected_arog_data, 
+  return(list(raw_data        = raw_arog_data,
+              selected_data   = selected_arog_data, 
               wrangled_data   = wrangled_arog_data, 
-              validation_data = split_arog_data_one$test_set,
+              modeling_data   = split_arog_data_one$train_set,
               training_data   = split_arog_data_two$train_set,
-              testing_data   = split_arog_data_one$test_set))
+              testing_data    = split_arog_data_two$test_set,
+              validation_data = split_arog_data_one$test_set))
 }
 
 #--------------------------------------------------------------------
@@ -672,40 +680,83 @@ library(DescTools)
 
 train_dat <- arog_data$training_data #%>%
 #mutate(totalRent = factor(RoundTo(totalRent, 50)))
+train_mtx <- train_dat %>% select(-totalRent) %>% data.matrix(.)
+
 val_dat <- arog_data$validation_data #%>%
 #mutate(totalRent = factor(RoundTo(totalRent, 50)))
-x_mtx <- train_dat %>% select(-totalRent) %>% data.matrix(.)
+val_mtx <- val_dat %>% select(-totalRent) %>% data.matrix(.)
 
 #---------------------------
 # Correlations
 #---------------------------
-# x_cor <- cor(x_mtx)
+# x_cor <- cor(train_mtx)
 # x_cor_rnd <- round(x_cor, 3)
 # image(1:ncol(x_cor_rnd), 1:ncol(x_cor_rnd), x_cor_rnd[,ncol(x_cor_rnd):1])
 
 #---------------------------
 # PCA
 #---------------------------
-x_pca <- prcomp(x_mtx)
-summary(x_pca)
+x_pca <- prcomp(train_mtx)
+k <- 2
+pca_model_pred <- x_pca$x[, 1:k]
 
-models <- c("glm",
-            #"lda",         #<- Factor totalRent
-            #"naive_bayes", #<- Factor totalRent
-            "svmLinear",
-            "knn",                                     #Requires k parameters range
-            "gamLoess",     #<- reports an internal error
-            #"multinom",    #<- Factor totalRent
-            #"qda",         #<- Factor totalRent
-            "rf",                                     #Requires complexity parameters
-            "adaboost")
+# summary(x_pca)
+# 
+# models <- c("lm",           #<+> 
+#             "glm",          #<+> 
+#             #"lda",         #<-> Factor totalRent
+#             #"naive_bayes", #<-> Factor totalRent
+#             "svmLinear",    #<+> 
+#             "knn",          #<+> Requires k parameters range
+#             "gamLoess",     #<-> Reports an internal error
+#             #"multinom",    #<-> Factor totalRent
+#             #"qda",         #<-> Factor totalRent
+#             "rf",           #<-> Runs too long!
+#             "adaboost")     #<?>
+# 
+# fits <- lapply(models, function(model){ 
+#   print(model)
+#   try(train(pca_model_pred, train_dat$totalRent, method = model))
+# }) 
 
-pca_model_pred <- x_pca$x[, 1:2]
-fits <- lapply(models, function(model){ 
-  print(model)
-  try(train(pca_model_pred, train_dat$totalRent, method = model))
-}) 
+#----------------------------------
+#Random Forest
+#----------------------------------
+rf_fit <- train(pca_model_pred, 
+                train_dat$totalRent,
+                method = "Rborist")
+ggplot(rf_fit$bestTune)
+rf_fit$bestTune
 
+val_rot_mtx <- sweep(val_mtx, 2, colMeans(val_mtx)) %*% x_pca$rotation
+val_rot_mtx_pc <- val_rot_mtx[,1:k]
+totalRent_hat <- predict(rf_fit, val_rot_mtx_pc, type = "raw")
+RMSE(totalRent_hat, val_dat$totalRent)
+
+#----------------------------------
+#KNN
+#----------------------------------
+knn_fit <- train(pca_model_pred,
+                 train_dat$totalRent,
+                 method = "knn",
+                 tuneGrid = data.frame(k = seq(15, 25, 1)))
+ggplot(knn_fit)
+knn_fit$bestTune
+
+val_rot_mtx <- sweep(val_mtx, 2, colMeans(val_mtx)) %*% x_pca$rotation
+val_rot_mtx_pc <- val_rot_mtx[,1:k]
+totalRent_hat <- predict(knn_fit, val_rot_mtx_pc, type = "raw")
+RMSE(totalRent_hat, val_dat$totalRent)
+
+#----------------------------------
+#Loess
+#----------------------------------
+grid <- expand.grid(span = seq(0.15, 0.65, len = 10), degree = 1)
+train_loess <- train(pca_model_pred,
+                    train_dat$totalRent,
+                    method = "gamLoess",
+                    tuneGrid=grid)
+ggplot(train_loess, highlight = TRUE)
 
 #---------------------------
 # Try out knn: FAILED
