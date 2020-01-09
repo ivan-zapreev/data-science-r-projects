@@ -37,22 +37,11 @@ options(digits=7)
 
 MOVIELENS_DATA_FILE_NAME <- "arog_data.rda"
 MOVIELENS_REPORT_FILE_NAME <- "arog_report.rda"
-GENERATOR_SCRIPT_NAME <- "apartment_rental_project.R"
 
-#Safe Load the files
-safe_load_file <- function(file_name) {
-  if(file.exists(file_name)){
-    load(file_name)
-  } else {
-      message("The ", file_name, 
-              " file is missing, please run the ", 
-              GENERATOR_SCRIPT_NAME, " script first!")
-  }
-}
-safe_load_file(MOVIELENS_DATA_FILE_NAME)
-safe_load_file(MOVIELENS_REPORT_FILE_NAME)
+#Load the files
+load(MOVIELENS_DATA_FILE_NAME)
+load(MOVIELENS_REPORT_FILE_NAME)
 ```
-
 
 ```{r, echo=F}
 #This R chunk only contains helper functions
