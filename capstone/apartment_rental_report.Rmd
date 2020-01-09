@@ -1025,9 +1025,11 @@ From the plot above, there is a clear clasterization of the `totalRent` values. 
 The algorithms above will be run with the default parameters, unless tuning grid parameters are required. Therefore we will consider the entire `modeling` set, as any cross-validation will be done within the `train(.)` method of the `caret` package. Last but not least, we will only use the first two principle components of the available predictors data. Any models that will fail to be trained within (`TRAIN_CPU_TIME_OUT_SECONDS = ` `r arog_report$TRAIN_CPU_TIME_OUT_SECONDS`) CPU seconds will be discarded from the further use. Any additional model training parameters, if required, will be presented in the *"Results"* section of this report.
 
 ## Modeling code snippets
+*Disclaimer*: This section is EXCLUSIVELY meant for the readers interested in implementation details!
+
 To further clarify our approach, below we provide some of the code used for model training and evaluation. First, we present the main utility functions. Next, we show their use in a single *model-train-evaluate* sequence.
 
-As for PCA analysis, we convert our data into a numerical-data matrix using the next function:
+As for `PCA`, we convert our data into a numerical-data matrix, here we apply:
 ```{r, eval = FALSE}
 #--------------------------------------------------------------------
 # This function prepares predictors data matrix from a given data set.
@@ -1046,7 +1048,7 @@ prepare_data_matrix <- function(data_set) {
 }
 ```
 
-To get the selected PC predictors matrix from the numerical-data matrix we use:
+To get the selected PC predictors matrix from the numerical-data matrix we employ:
 ```{r, eval = FALSE}
 #--------------------------------------------------------------------
 # This function takes:
@@ -1071,15 +1073,56 @@ prepare_pc_predictors <- function(pca_result, data_mtx, num_pc = NUM_PC_TO_CONSI
 }
 ```
 
-The model training is be with the next function, mind the time-out handling:
+With the functions above, we can prepare the numerical `modeling` and `validation` set data matrixes for the `totalRent` values plus the first two principle components (`PC1` and `PC2`) using:
+```{r, eval = FALSE}
+#--------------------------------------------------------------------
+# This function takes the modeling and validation sets to prepare the
+# data that will be used for model training and validation in the PC
+# (principle component) space. The function arguments are:
+#    model_set - the modeling set
+#    valid_set - the validation set
+# The result is a list with the following attributes:
+#    model_pc_mtx - the matrix with R (totalRent), PC1, PC2
+#                   columns for the modeling set
+#    valid_pc_mtx - the matrix with R (totalRent), PC1, PC2
+#                   columns for the modeling set
+#--------------------------------------------------------------------
+prepare_pc_space_data <- function(model_set, valid_set) {
+  #Compute the data matrixes for the data sets
+  model_mtx <- prepare_data_matrix(model_set)
+  valid_mtx <- prepare_data_matrix(valid_set)
+  
+  #Perform the PCA analysis on the modeling matrix
+  pca_result <- prcomp(model_mtx)
+  
+  #Prepare the PC space matrix for the modeling set
+  pc_mtx_col_names <- c("R", "PC1", "PC2")
+  model_pc_mtx <- prepare_pc_predictors(pca_result, model_mtx)
+  model_pc_mtx <- cbind(model_set$totalRent, model_pc_mtx)
+  colnames(model_pc_mtx) <- pc_mtx_col_names
+  
+  #Prepare the PC space matrix for the validation set
+  valid_pc_mtx <- prepare_pc_predictors(pca_result, valid_mtx)
+  valid_pc_mtx <- cbind(valid_set$totalRent, valid_pc_mtx)
+  colnames(valid_pc_mtx) <- pc_mtx_col_names
+  
+  #Remove the temporary data
+  rm(pca_result, model_mtx, valid_mtx)
+  
+  #Return the required data
+  return(list(model_pc_mtx = model_pc_mtx,
+              valid_pc_mtx = valid_pc_mtx))
+}
+```
+
+The model training is then to be done with:
 ```{r, eval = FALSE}
 #--------------------------------------------------------------------
 # This function allows to train a model specified by the method
-#    data_mtx - the numeric-valued predictors data matrix
-#    exp_res - the expected results vector for the predictors
+#    model_pc_mtx - the numeric-valued predictor space data matrix
 #    method - the method to be used
 # The training will be done with a time-out defined by the 
-#   TRAIN_CPU_TIME_OUT_SECONDS
+#   GLOBAL_METHOD_TIME_OUT_SECONDS
 # The result is the list with the following elements:
 #    method - the method used
 #    start_time - the time the training started
@@ -1087,7 +1130,7 @@ The model training is be with the next function, mind the time-out handling:
 #    end_time - the time the training finished, if success == TRUE
 #    fit_model - the fit model, if success == TRUE
 #--------------------------------------------------------------------
-train_model <- function(data_mtx, exp_res, method, ...) {
+train_model <- function(model_pc_mtx, method, ...) {
   #Remove the fit model global if it exists
   ifrm(fit_model)
   
@@ -1101,11 +1144,12 @@ train_model <- function(data_mtx, exp_res, method, ...) {
       train_res <- append(train_res, list(start_time = Sys.time()))
       
       #Fit the model from data
-      fit_model <- train(data_mtx, exp_res, method = method, ...)
+      fit_model <- train(model_pc_mtx[,2:ncol(model_pc_mtx)],
+                         model_pc_mtx[,1], method = method, ...)
       
       #Record the end time and the result
       train_res <- append(train_res, list(fit_model = fit_model))
-    }, timeout = TRAIN_CPU_TIME_OUT_SECONDS))
+    }, timeout = TRAIN_CPU_TIME_OUT_SECONDS)
   }, TimeoutException = function(ex) {
     message("Timeout (", TRAIN_CPU_TIME_OUT_SECONDS, 
             " sec.) while training the '", method, "' model, skipping!")
@@ -1124,28 +1168,29 @@ train_model <- function(data_mtx, exp_res, method, ...) {
 }
 ```
 
-The model validation is done by the next function:
+The model validation then can be performed by using:
 ```{r, eval = FALSE}
 #--------------------------------------------------------------------
-# The model evaluation matrix takes the:
+# The model evaluation function takes the:
 #     mdl_res - the modeling results with the fit model to make predictions
-#     pc_mtx - the validation set selected pc predictors matrix
+#     valid_pc_mtx - the validation set data matrix in PC space
 #     exp_res - the actual validation set values
 # Once the model predicts the values are the RMSE score is computed.
 # The result of the function is the list with the following elements:
 #    mdl_res - the modeling results
-#    pc_mtx  - the selected pc predictors matrix
-#    exp_res - the expected (true) values to compare with
+#    valid_pc_mtx  - the validation set data matrix in PC space
 #    act_res - the actually predicted values
-#    rmse    - the RMSE score between exp_res and act_res
+#    rmse    - the RMSE score between valid_pc_mtx[,1] and act_res
 #--------------------------------------------------------------------
-evaluate_model <- function(mdl_res, pc_mtx, exp_res) {
+evaluate_model <- function(mdl_res, valid_pc_mtx) {
   if(mdl_res$success) {
-    #Predict the raw data based in the fit model and predictor values
-    act_res <- predict(mdl_res$fit_model, pc_mtx, type = "raw")
+    #Predict the raw data based on the fit model and predictors
+    act_res <- predict(mdl_res$fit_model, 
+                       valid_pc_mtx[,2:ncol(valid_pc_mtx)], 
+                       type = "raw")
     
     #Compute the RMSE score
-    rmse <- RMSE(act_res, exp_res)
+    rmse <- RMSE(act_res, valid_pc_mtx[,1])
   } else {
     #Training failed so return the NA results
     act_res <- NA 
@@ -1153,33 +1198,24 @@ evaluate_model <- function(mdl_res, pc_mtx, exp_res) {
   }
   
   #Create the resulting list and return
-  return(list(mdl_res = mdl_res, pc_mtx  = pc_mtx,
-              exp_res = exp_res, act_res = act_res, 
-              rmse    = rmse))
+  return(list(mdl_res      = mdl_res, 
+              valid_pc_mtx = valid_pc_mtx,
+              act_res      = act_res,
+              rmse         = rmse))
+}
 ```
 
-With the functions above t complete *model-train-evaluate* sequence for a `KNN` look as follows:
+With the functions above the complete *model-train-evaluate* sequence for a `KNN` look as follows:
 
 ```{r, eval = FALSE}
-#Get the modeling and validation data
-model_set <- arog_data$modeling_data
-valid_set <- arog_data$validation_data
-
-#Compute the data matrixes for the data sets
-model_mtx <- prepare_data_matrix(model_set)
-valid_mtx <- prepare_data_matrix(valid_set)
-
-#Perform the PCA analysis on the modeling matrix
-pca_result <- prcomp(model_mtx)
-
-#Prepare the predictors for the modeling and validation sets
-model_pc_mtx <- prepare_pc_predictors(pca_result, model_mtx)
-valid_pc_mtx <- prepare_pc_predictors(pca_result, valid_mtx)
+#Prepare PC space data
+pc_space_data <- prepare_pc_space_data(
+  arog_data$modeling_data, arog_data$validation_data)
 
 #Train and validate the KNN model
-knn_train_res <- train_model(model_pc_mtx, model_set$totalRent, "knn",
-                             tuneGrid = data.frame(k = seq(13, 18, 1)))
-knn_mdl_res <- evaluate_model(knn_train_res, valid_pc_mtx, valid_set$totalRent)
+knn_train_res <- train_model(pc_space_data$model_pc_mtx, "knn",
+                             tuneGrid = data.frame(k = KNN_K_SEQUENCE))
+knn_mdl_res <- evaluate_model(knn_train_res, pc_space_data$valid_pc_mtx)
 knn_mdl_res$rmse
 ```
 

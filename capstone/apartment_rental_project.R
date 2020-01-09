@@ -49,7 +49,8 @@ REGULARIZATION_LAMBDAS <- seq(0, 10, 0.25)
 TRAIN_CPU_TIME_OUT_SECONDS <- 6*60*60 #Is set to 6 CPU hours
 #The number of principle components to consider
 NUM_PC_TO_CONSIDER <- 2 #Is set to two which explains the 99.3% of data variability
-                        #Setting it to 6 will explain the 99.99% of data variability
+#Setting it to 6 will explain the 99.99% of data variability
+KNN_K_SEQUENCE <- seq(16, 24, 1) #The k sequence for the tuning grid of KNN
 
 #--------------------------------------------------------------------
 # Define some constant parameters
@@ -642,7 +643,8 @@ init_report_data <- function() {
     MAX_NUM_FLOORS_TO_CONSIDER = MAX_NUM_FLOORS_TO_CONSIDER,
     MAX_FLOOR_TO_CONSIDER = MAX_FLOOR_TO_CONSIDER,
     MIN_MAX_OUTLIER_FILTERS = MIN_MAX_OUTLIER_FILTERS,
-    TRAIN_CPU_TIME_OUT_SECONDS = TRAIN_CPU_TIME_OUT_SECONDS
+    TRAIN_CPU_TIME_OUT_SECONDS = TRAIN_CPU_TIME_OUT_SECONDS,
+    KNN_K_SEQUENCE = KNN_K_SEQUENCE
   ))
 }
 
@@ -705,9 +707,47 @@ prepare_pc_predictors <- function(pca_result, data_mtx, num_pc = NUM_PC_TO_CONSI
 }
 
 #--------------------------------------------------------------------
+# This function takes the modeling and validation sets to prepare the
+# data that will be used for model training and validation in the PC
+# (principle component) space. The function arguments are:
+#    model_set - the modeling set
+#    valid_set - the validation set
+# The result is a list with the following attributes:
+#    model_pc_mtx - the matrix with R (totalRent), PC1, PC2
+#                   columns for the modeling set
+#    valid_pc_mtx - the matrix with R (totalRent), PC1, PC2
+#                   columns for the modeling set
+#--------------------------------------------------------------------
+prepare_pc_space_data <- function(model_set, valid_set) {
+  #Compute the data matrixes for the data sets
+  model_mtx <- prepare_data_matrix(model_set)
+  valid_mtx <- prepare_data_matrix(valid_set)
+  
+  #Perform the PCA analysis on the modeling matrix
+  pca_result <- prcomp(model_mtx)
+  
+  #Prepare the PC space matrix for the modeling set
+  pc_mtx_col_names <- c("R", "PC1", "PC2")
+  model_pc_mtx <- prepare_pc_predictors(pca_result, model_mtx)
+  model_pc_mtx <- cbind(model_set$totalRent, model_pc_mtx)
+  colnames(model_pc_mtx) <- pc_mtx_col_names
+  
+  #Prepare the PC space matrix for the validation set
+  valid_pc_mtx <- prepare_pc_predictors(pca_result, valid_mtx)
+  valid_pc_mtx <- cbind(valid_set$totalRent, valid_pc_mtx)
+  colnames(valid_pc_mtx) <- pc_mtx_col_names
+  
+  #Remove the temporary data
+  rm(pca_result, model_mtx, valid_mtx)
+  
+  #Return the required data
+  return(list(model_pc_mtx = model_pc_mtx,
+              valid_pc_mtx = valid_pc_mtx))
+}
+
+#--------------------------------------------------------------------
 # This function allows to train a model specified by the method
-#    data_mtx - the numeric-valued predictors data matrix
-#    exp_res - the expected results vector for the predictors
+#    model_pc_mtx - the numeric-valued predictor space data matrix
 #    method - the method to be used
 # The training will be done with a time-out defined by the 
 #   GLOBAL_METHOD_TIME_OUT_SECONDS
@@ -718,7 +758,7 @@ prepare_pc_predictors <- function(pca_result, data_mtx, num_pc = NUM_PC_TO_CONSI
 #    end_time - the time the training finished, if success == TRUE
 #    fit_model - the fit model, if success == TRUE
 #--------------------------------------------------------------------
-train_model <- function(data_mtx, exp_res, method, ...) {
+train_model <- function(model_pc_mtx, method, ...) {
   #Remove the fit model global if it exists
   ifrm(fit_model)
   
@@ -732,7 +772,8 @@ train_model <- function(data_mtx, exp_res, method, ...) {
       train_res <- append(train_res, list(start_time = Sys.time()))
       
       #Fit the model from data
-      fit_model <- train(data_mtx, exp_res, method = method, ...)
+      fit_model <- train(model_pc_mtx[,2:ncol(model_pc_mtx)],
+                         model_pc_mtx[,1], method = method, ...)
       
       #Record the end time and the result
       train_res <- append(train_res, list(fit_model = fit_model))
@@ -741,7 +782,7 @@ train_model <- function(data_mtx, exp_res, method, ...) {
     message("Timeout (", TRAIN_CPU_TIME_OUT_SECONDS, 
             " sec.) while training the '", method, "' model, skipping!")
   })
-
+  
   #Mark the success flag
   train_res <- append(train_res, 
                       list(end_time = Sys.time(), 
@@ -755,25 +796,26 @@ train_model <- function(data_mtx, exp_res, method, ...) {
 }
 
 #--------------------------------------------------------------------
-# The model evaluation matrix takes the:
+# The model evaluation function takes the:
 #     mdl_res - the modeling results with the fit model to make predictions
-#     pc_mtx - the validation set selected pc predictors matrix
+#     valid_pc_mtx - the validation set data matrix in PC space
 #     exp_res - the actual validation set values
 # Once the model predicts the values are the RMSE score is computed.
 # The result of the function is the list with the following elements:
 #    mdl_res - the modeling results
-#    pc_mtx  - the selected pc predictors matrix
-#    exp_res - the expected (true) values to compare with
+#    valid_pc_mtx  - the validation set data matrix in PC space
 #    act_res - the actually predicted values
-#    rmse    - the RMSE score between exp_res and act_res
+#    rmse    - the RMSE score between valid_pc_mtx[,1] and act_res
 #--------------------------------------------------------------------
-evaluate_model <- function(mdl_res, pc_mtx, exp_res) {
+evaluate_model <- function(mdl_res, valid_pc_mtx) {
   if(mdl_res$success) {
-    #Predict the raw data based in the fit model and predictor values
-    act_res <- predict(mdl_res$fit_model, pc_mtx, type = "raw")
+    #Predict the raw data based on the fit model and predictors
+    act_res <- predict(mdl_res$fit_model, 
+                       valid_pc_mtx[,2:ncol(valid_pc_mtx)], 
+                       type = "raw")
     
     #Compute the RMSE score
-    rmse <- RMSE(act_res, exp_res)
+    rmse <- RMSE(act_res, valid_pc_mtx[,1])
   } else {
     #Training failed so return the NA results
     act_res <- NA 
@@ -781,9 +823,51 @@ evaluate_model <- function(mdl_res, pc_mtx, exp_res) {
   }
   
   #Create the resulting list and return
-  return(list(mdl_res = mdl_res, pc_mtx  = pc_mtx,
-              exp_res = exp_res, act_res = act_res, 
-              rmse    = rmse))
+  return(list(mdl_res      = mdl_res, 
+              valid_pc_mtx = valid_pc_mtx,
+              act_res      = act_res,
+              rmse         = rmse))
+}
+
+#--------------------------------------------------------------------
+# This function accepts:
+#    arog_report - the report to be extended with the
+#                  training and validaiton results
+#    pc_space_data - the modeling and validation set
+#                    dat matrixes in PC space
+#    method - the method name to be used for training
+#    ... - any other arguments, as tuning grid parameters to be 
+#          forwarded to the train(.) function of the caret package
+# This function returns the updated report list, storing a method
+# named element which is the list storing the model trainig and the
+# model evaluation results.
+#--------------------------------------------------------------------
+train_model_and_report <- function(arog_report, pc_space_data, method, ...) {
+  #Run training
+  cat("Start trainig `", method,"` model (",
+      format(Sys.time(),usetz = TRUE),")\n")
+  train_res <- train_model(pc_space_data$model_pc_mtx, method, ...)
+  
+  #Run evaluation
+  cat("Start evaluating `", method,"` model (",
+      format(Sys.time(),usetz = TRUE),")\n")
+  eval_res  <- evaluate_model(train_res, pc_space_data$valid_pc_mtx)
+  
+  cat("Finished evaluating `", method,"` model (", 
+      format(Sys.time(),usetz = TRUE),")\n")
+  
+  #Create the resulting list
+  results <- list(train_res = train_res,
+                  eval_res = eval_res)
+  
+  #Append the list as a named element to the report
+  arog_report <- append(arog_report, list("xxxx" = results))
+  names(arog_report)[which(names(arog_report)=="xxxx")] <- paste(method,"_results",sep="")
+  
+  cat("The '", method,"' model RMSE score is", eval_res$rmse,"\n")
+  
+  #Return the updated report
+  return(arog_report)
 }
 
 ####################################################################
@@ -799,52 +883,28 @@ arog_data <- get_arog_data()
 #     the required information for the report to be generated
 arog_report <- init_report_data()
 
-#Get the modeling and validation data
-model_set <- arog_data$modeling_data
-valid_set <- arog_data$validation_data
+#03 - Prepare PC space data
+pc_space_data <- prepare_pc_space_data(
+  arog_data$modeling_data, arog_data$validation_data)
 
-#Compute the data matrixes for the data sets
-model_mtx <- prepare_data_matrix(model_set)
-valid_mtx <- prepare_data_matrix(valid_set)
+#04 - Train and validate the LM model
+arog_report <- train_model_and_report(arog_report, pc_space_data, "lm")
 
-#Peform the PCA analysis on the modeling matrix
-pca_result <- prcomp(model_mtx)
+#05 - Train and validate the GLM model
+arog_report <- train_model_and_report(arog_report, pc_space_data, "glm")
 
-#Prepare the predictors for the modeling and validation sets
-model_pc_mtx <- prepare_pc_predictors(pca_result, model_mtx)
-valid_pc_mtx <- prepare_pc_predictors(pca_result, valid_mtx)
+#06 - Train and validate the KNN model
+arog_report <- train_model_and_report(arog_report, pc_space_data, "knn",
+                                      tuneGrid = data.frame(k = KNN_K_SEQUENCE))
 
-#Train and validate the LM model
-lm_train_res <- train_model(model_pc_mtx, model_set$totalRent, "lm")
-lm_mdl_res <- evaluate_model(lm_train_res, valid_pc_mtx, valid_set$totalRent)
-lm_mdl_res$rmse
+#07 - Train and validate the Rborist model
+arog_report <- train_model_and_report(arog_report, pc_space_data, "Rborist")
 
-#Train and validate the GLM model
-glm_train_res <- train_model(model_pc_mtx, model_set$totalRent, "glm")
-glm_mdl_res <- evaluate_model(glm_train_res, valid_pc_mtx, valid_set$totalRent)
-glm_mdl_res$rmse
+#08 - Train and validate the svmLinear model
+arog_report <- train_model_and_report(arog_report, pc_space_data, "svmLinear")
 
-#Train and validate the KNN model
-knn_train_res <- train_model(model_pc_mtx, model_set$totalRent, "knn",
-                             tuneGrid = data.frame(k = seq(13, 18, 1)))
-knn_mdl_res <- evaluate_model(knn_train_res, valid_pc_mtx, valid_set$totalRent)
-knn_mdl_res$rmse
+#09 - Train and validate the gamLoess model
+arog_report <- train_model_and_report(arog_report, pc_space_data, "gamLoess")
 
-#Train and validate the Rborist model
-rbt_train_res <- train_model(model_pc_mtx, model_set$totalRent, "Rborist")
-rbt_mdl_res <- evaluate_model(rbt_train_res, valid_pc_mtx, valid_set$totalRent)
-rbt_mdl_res$rmse
-
-#Train and validate the svmLinear model
-svm_train_res <- train_model(model_pc_mtx, model_set$totalRent, "svmLinear")
-svm_mdl_res <- evaluate_model(svm_train_res, valid_pc_mtx, valid_set$totalRent)
-svm_mdl_res$rmse
-
-#Train and validate the gamLoess model
-gam_train_res <- train_model(model_pc_mtx, model_set$totalRent, "gamLoess")
-gam_mdl_res <- evaluate_model(gam_train_res, valid_pc_mtx, valid_set$totalRent)
-gam_mdl_res$rmse
-
-#00 - Store the report into the file to be used from the arog_report.Rmd
+#10 - Store the report into the file to be used from the arog_report.Rmd
 store_report_data(arog_report)
-
