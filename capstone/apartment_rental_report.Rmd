@@ -939,7 +939,7 @@ Due to a high correlation of multiple predictors we can significantly reduce the
 To begin, let us recall the project's goal and one important data observation gained:
 
 * **Goal**: Build a prediction model for the `totalRent` values with an `RMSE` score $\leq 50$;
-* **Data observation**: About $99.3$% data variability is in the first two principle components;
+* **Data**: About $99.3$% data variability is in the first two principle components;
 
 Let us make a scatter plot of `PC1` vs `PC2` indicating the corresponding `totalRent` values with color:
 
@@ -991,59 +991,165 @@ From the plot above, there is a clear clasterization of the `totalRent` values. 
 [^13]: For more information see also the [list of caret's Available Models](https://topepo.github.io/caret/available-models.html).
 [^14]: This is a high-performance implementation of a random forest model `"rf"`
 
-The algorithms above will be run with the default parameters, unless tuning grid parameters are required. Therefore we will consider the entire `modeling` set, as any cross-validation will be done within the `train(.)` method of the `caret` package. Last but not least, we will only use the first two principle components of the available predictors data.
+The algorithms above will be run with the default parameters, unless tuning grid parameters are required. Therefore we will consider the entire `modeling` set, as any cross-validation will be done within the `train(.)` method of the `caret` package. Last but not least, we will only use the first two principle components of the available predictors data. Any models that will fail to be trained within (`GLOBAL_METHOD_TIME_OUT_SECONDS = ` `r arog_report$GLOBAL_METHOD_TIME_OUT_SECONDS`) seconds will be discarded from the further use. Any additional model training parameters, if required, will be presented in the *"Results"* section of this report.
 
-The model training will be done by the next function:
+## Modeling code snippets
+To further clarify our approach, below we provide some of the code used for model training and evaluation. First, we present the main utility functions. Next, we show their use in a single *model-train-evaluate* sequence.
+
+As for PCA analysis, we convert our data into a numerical-data matrix using the next function:
 ```{r, eval = FALSE}
-  #--------------------------------------------------------------------
-  #
-  #--------------------------------------------------------------------
-  train_model <- function(predictors_mtx, totalRent, method, ...) {
-    #Train and return the model, with passing
-    #through additional method parameters
-    return(train(predictors_mtx,
-                 totalRent,
-                 method = method,
-                 ...))
-  }
+#--------------------------------------------------------------------
+# This function prepares predictors data matrix from a given data set.
+#    data_set -- the data set to prepare the  data matrix from
+# The performed steps are:
+#    1. Remove the totalRent column
+#    2. Converting to numeric (data) matrix
+# The resulting matrix is returned "as-is"
+#--------------------------------------------------------------------
+prepare_data_matrix <- function(data_set) {
+  #Compute the full matrix from the data set
+  data_mtx <- data_set %>% select(-totalRent) %>% data.matrix(.)
+  
+  #Return the predictors matrix
+  return(data_mtx)
+}
 ```
 
-The model validation will be done by the next function:
+To get the selected PC predictors matrix from the numerical-data matrix we use:
 ```{r, eval = FALSE}
-  #--------------------------------------------------------------------
-  #
-  #--------------------------------------------------------------------
-  evaluate_model <- function(fit_model, predictors_mtx, totalRent) {
-    #Predict the raw data based in the fit model and predictor values
-    totalRent_hat <- predict(knn_fit, predictors_mtx, type = "raw")
-
-    #Compute and return the RMSE score
-    return(RMSE(totalRent_hat, totalRent))
-  }
+#--------------------------------------------------------------------
+# This function takes:
+#    pca_result - the PCA analysis results
+#    data_mtx - the data matrix
+#    num_pc - the number of PC to consider, defaults to NUM_PC_TO_CONSIDER
+# and transforms the data_mtx into the PC matrix by:
+#    1. Zero-centering the data_mtx columns
+#    2. Applying pca_result$rotation matrix
+#    3. Selecting num_pc first columns
+# The resulting matrix is returned "as-is"
+#--------------------------------------------------------------------
+prepare_pc_predictors <- function(pca_result, data_mtx, num_pc = NUM_PC_TO_CONSIDER) {
+  #Zero-center the columns
+  cent_pred_mtx <- sweep(data_mtx, 2, colMeans(data_mtx))
+  
+  #Rotate to move to the new basis
+  rot_pred_mtx <- cent_pred_mtx %*% pca_result$rotation
+  
+  #Only return the required principle component columns
+  return(rot_pred_mtx[,1:num_pc])
+}
 ```
 
-The predictors matrix will be prepared by the next function:
+The model training is be with the next function, mind the time-out handling:
 ```{r, eval = FALSE}
-  #--------------------------------------------------------------------
-  #
-  #--------------------------------------------------------------------
-  prepare_predictors <- function(pca_result, data_set, num_pc) {
-    #Compute the full matrix from the data set by:
-    # 1. Removing the totalRent column
-    # 2. Converting to numeric matrix
-    full_mtx <- data_set %>%
-      select(-totalRent) %>%
-      data.matrix(.)
-    
-    #Zero-center the columns, and then rotate
-    rot_mtx <- sweep(full_mtx, 2, colMeans(val_mtx)) %*% pca_result$rotation
+#--------------------------------------------------------------------
+# This function allows to train a model specified by the method
+#    data_mtx - the numeric-valued predictors data matrix
+#    exp_res - the expected results vector for the predictors
+#    method - the method to be used
+# The training will be done with a time-out defined by the 
+#   GLOBAL_METHOD_TIME_OUT_SECONDS
+# The result is the list with the following elements:
+#    start_time - the time the training started
+#    success - the success indicating flag
+#    end_time - the time the training finished, if success == TRUE
+#    fit_model - the fit model, if success == TRUE
+#--------------------------------------------------------------------
+train_model <- function(data_mtx, exp_res, method, ...) {
+  #Remove the fit model global if it exists
+  ifrm(fit_model)
+  
+  #Initialize new empty training results list
+  train_res <- list()
+  
+  #Train the model, with a time-out
+  withTimeout({
+    #Record the start time
+    train_res <- append(train_res, list(start_time = Sys.time()))
+    try({
+      #Fit the model from data
+      fit_model <- train(data_mtx, exp_res, method = method, ...)
+      
+      #Record the end time and the result
+      train_res <- append(train_res, list(end_time = Sys.time(), 
+                                          fit_model = fit_model))
+    })
+  }, 
+  timeout = GLOBAL_METHOD_TIME_OUT_SECONDS, onTimeout = "silent")
+  
+  #Mark the success flag
+  train_res <- append(train_res, list(success = exists("fit_model")))
 
-    #Only return the required principle component columns
-    return(rot_mtx[,1:num_pc])
-  }
+  #Return the result
+  return(train_res)
+}
 ```
 
-Any models that will fail to be trained within $1$ hour on the hardware at hand:
+The model validation is done by the next function:
+```{r, eval = FALSE}
+#--------------------------------------------------------------------
+# The model evaluation matrix takes the:
+#     mdl_res - the modeling results with the fit model to make predictions
+#     pc_mtx - the validation set selected pc predictors matrix
+#     exp_res - the actual validation set values
+# Once the model predicts the values are the RMSE score is computed.
+# The result of the function is the list with the following elements:
+#    mdl_res - the modeling results
+#    pc_mtx  - the selected pc predictors matrix
+#    exp_res - the expected (true) values to compare with
+#    act_res - the actually predicted values
+#    rmse    - the RMSE score between exp_res and act_res
+#--------------------------------------------------------------------
+evaluate_model <- function(mdl_res, pc_mtx, exp_res) {
+  #Predict the raw data based in the fit model and predictor values
+  act_res <- predict(mdl_res$fit_model, pc_mtx, type = "raw")
+  
+  #Compute the RMSE score
+  rmse <- RMSE(act_res, exp_res)
+  
+  #Create the resulting list and return
+  return(list(mdl_res = mdl_res,
+              pc_mtx    = pc_mtx,
+              exp_res   = exp_res,
+              act_res   = act_res, 
+              rmse      = rmse))
+}
+```
+
+With the functions above t complete *model-train-evaluate* sequence for a `KNN` look as follows:
+
+```{r, eval = FALSE}
+#Get the modeling and validation data
+model_set <- arog_data$modeling_data
+valid_set <- arog_data$validation_data
+
+#Compute the data matrixes for the data sets
+model_mtx <- prepare_data_matrix(model_set)
+valid_mtx <- prepare_data_matrix(valid_set)
+
+#Perform the PCA analysis on the modeling matrix
+pca_result <- prcomp(model_mtx)
+
+#Prepare the predictors for the modeling and validation sets
+model_pc_mtx <- prepare_pc_predictors(pca_result, model_mtx)
+valid_pc_mtx <- prepare_pc_predictors(pca_result, valid_mtx)
+
+#Train and validate the KNN model
+rbt_train_res <- train_model(model_pc_mtx, model_set$totalRent, "knn",
+                             tuneGrid = data.frame(k = seq(13, 18, 1)))
+rbt_mdl_res <- evaluate_model(rbt_train_res, valid_pc_mtx, valid_set$totalRent)
+rbt_mdl_res$rmse
+```
+
+For more details, see the supplied `apartment_rental_project.R` modeling script.
+
+# Results
+<!-- A results section that:
+ 1. Presents the modeling results 
+ 2. Discusses the model performance -->
+
+## Used hardware
+The experiments were run on the following hardware at hand:
 ```
     Model Name: MacBook Pro
     Model Identifier: MacBookPro11,4
@@ -1057,14 +1163,20 @@ Any models that will fail to be trained within $1$ hour on the hardware at hand:
     Boot ROM Version: 194.0.0.0.0
     SMC Version (system): 2.29f24
 ```
-will be discarded from further user.
 
-All the additional model parameters, if required, will be presented in the *"Results"* section of this report.
+## Mode `lm` results
 
-# Results
-<!-- A results section that:
- 1. Presents the modeling results 
- 2. Discusses the model performance -->
+## Mode `glm` results
+
+## Mode `svmLinear` results
+
+## Mode `knn` results
+
+## Mode `gamLoess` results
+
+## Mode `Rborist` results
+
+# Results summary
 
 # Conclusions
 <!-- A conclusion section that:

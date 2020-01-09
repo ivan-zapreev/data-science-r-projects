@@ -10,6 +10,7 @@ if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-
 if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
 if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
 if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(R.utils)) install.packages("R.utils", repos = "http://cran.us.r-project.org")
 
 #Modelling packages
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
@@ -28,6 +29,7 @@ library(caret)
 library(dslabs)
 library(data.table)
 library(dplyr)
+library(R.utils)
 
 ####################################################################
 # Section to define global variables
@@ -43,6 +45,11 @@ VALIDATION_TO_MODELING_SET_RATIO <- 0.1
 TEST_TO_TRAIN_SET_RATIO <- 0.2
 #Define a sequene of lambdas for regularization
 REGULARIZATION_LAMBDAS <- seq(0, 10, 0.25)
+#The modeling method time out in seconds
+GLOBAL_METHOD_TIME_OUT_SECONDS <- 60*60
+#The number of principle components to consider
+NUM_PC_TO_CONSIDER <- 2 #Is set to two which explains the 99.3% of data variability
+                        #Setting it to 6 will explain the 99.99% of data variability
 
 #--------------------------------------------------------------------
 # Define some constant parameters
@@ -634,7 +641,8 @@ init_report_data <- function() {
     TEST_TO_TRAIN_SET_RATIO = TEST_TO_TRAIN_SET_RATIO,
     MAX_NUM_FLOORS_TO_CONSIDER = MAX_NUM_FLOORS_TO_CONSIDER,
     MAX_FLOOR_TO_CONSIDER = MAX_FLOOR_TO_CONSIDER,
-    MIN_MAX_OUTLIER_FILTERS = MIN_MAX_OUTLIER_FILTERS
+    MIN_MAX_OUTLIER_FILTERS = MIN_MAX_OUTLIER_FILTERS,
+    GLOBAL_METHOD_TIME_OUT_SECONDS = GLOBAL_METHOD_TIME_OUT_SECONDS
   ))
 }
 
@@ -658,6 +666,117 @@ RMSE <- function(true_ratings, predicted_ratings) {
   return(sqrt(mean((true_ratings - predicted_ratings)^2)))
 }
 
+#--------------------------------------------------------------------
+# This function prepares predictors data matrix from a given data set.
+#    data_set -- the data set to prepare the  data matrix from
+# The performed steps are:
+#    1. Remove the totalRent column
+#    2. Converting to numeric (data) matrix
+# The resulting matrix is returned "as-is"
+#--------------------------------------------------------------------
+prepare_data_matrix <- function(data_set) {
+  #Compute the full matrix from the data set
+  data_mtx <- data_set %>% select(-totalRent) %>% data.matrix(.)
+  
+  #Return the predictors matrix
+  return(data_mtx)
+}
+
+#--------------------------------------------------------------------
+# This function takes:
+#    pca_result - the PCA analysis results
+#    data_mtx - the data matrix
+#    num_pc - the number of PC to consider, defaults to NUM_PC_TO_CONSIDER
+# and transforms the data_mtx into the PC matrix by:
+#    1. Zero-centering the data_mtx columns
+#    2. Applying pca_result$rotation matrix
+#    3. Selecting num_pc first columns
+# The resulting matrix is returned "as-is"
+#--------------------------------------------------------------------
+prepare_pc_predictors <- function(pca_result, data_mtx, num_pc = NUM_PC_TO_CONSIDER) {
+  #Zero-center the columns
+  cent_pred_mtx <- sweep(data_mtx, 2, colMeans(data_mtx))
+  
+  #Rotate to move to the new basis
+  rot_pred_mtx <- cent_pred_mtx %*% pca_result$rotation
+  
+  #Only return the required principle component columns
+  return(rot_pred_mtx[,1:num_pc])
+}
+
+#--------------------------------------------------------------------
+# This function allows to train a model specified by the method
+#    data_mtx - the numeric-valued predictors data matrix
+#    exp_res - the expected results vector for the predictors
+#    method - the method to be used
+# The training will be done with a time-out defined by the 
+#   GLOBAL_METHOD_TIME_OUT_SECONDS
+# The result is the list with the following elements:
+#    start_time - the time the training started
+#    success - the success indicating flag
+#    end_time - the time the training finished, if success == TRUE
+#    fit_model - the fit model, if success == TRUE
+#--------------------------------------------------------------------
+train_model <- function(data_mtx, exp_res, method, ...) {
+  #Remove the fit model global if it exists
+  ifrm(fit_model)
+  
+  #Initialize new empty training results list
+  train_res <- list()
+  
+  #Train the model, with a time-out
+  withTimeout({
+    #Record the start time
+    train_res <- append(train_res, list(start_time = Sys.time()))
+    try({
+      #Fit the model from data
+      fit_model <- train(data_mtx, exp_res, method = method, ...)
+      
+      #Record the end time and the result
+      train_res <- append(train_res, list(end_time = Sys.time(), 
+                                          fit_model = fit_model))
+    })
+  }, 
+  timeout = GLOBAL_METHOD_TIME_OUT_SECONDS, onTimeout = "silent")
+  
+  #Mark the success flag
+  train_res <- append(train_res, list(success = exists("fit_model")))
+  
+  #Remove the fit model global if it exists
+  ifrm(fit_model)
+  
+  #Return the result
+  return(train_res)
+}
+
+#--------------------------------------------------------------------
+# The model evaluation matrix takes the:
+#     mdl_res - the modeling results with the fit model to make predictions
+#     pc_mtx - the validation set selected pc predictors matrix
+#     exp_res - the actual validation set values
+# Once the model predicts the values are the RMSE score is computed.
+# The result of the function is the list with the following elements:
+#    mdl_res - the modeling results
+#    pc_mtx  - the selected pc predictors matrix
+#    exp_res - the expected (true) values to compare with
+#    act_res - the actually predicted values
+#    rmse    - the RMSE score between exp_res and act_res
+#--------------------------------------------------------------------
+evaluate_model <- function(mdl_res, pc_mtx, exp_res) {
+  #Predict the raw data based in the fit model and predictor values
+  act_res <- predict(mdl_res$fit_model, pc_mtx, type = "raw")
+  
+  #Compute the RMSE score
+  rmse <- RMSE(act_res, exp_res)
+  
+  #Create the resulting list and return
+  return(list(mdl_res = mdl_res,
+              pc_mtx    = pc_mtx,
+              exp_res   = exp_res,
+              act_res   = act_res, 
+              rmse      = rmse))
+}
+
 ####################################################################
 # Section to define the main part of the cript that will be
 # calling the utility functions from above and performing the
@@ -671,34 +790,70 @@ arog_data <- get_arog_data()
 #     the required information for the report to be generated
 arog_report <- init_report_data()
 
-#@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-library(caret)
-library(randomForest)
-library(DescTools)
+# #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# library(caret)
+# library(randomForest)
+# library(DescTools)
+# 
+# # TODO: Rund the rent to the integer?
+# 
+# train_dat <- arog_data$training_data #%>%
+# #mutate(totalRent = factor(RoundTo(totalRent, 50)))
+# train_mtx <- train_dat %>% select(-totalRent) %>% data.matrix(.)
+# 
+# val_dat <- arog_data$validation_data #%>%
+# #mutate(totalRent = factor(RoundTo(totalRent, 50)))
+# val_mtx <- val_dat %>% select(-totalRent) %>% data.matrix(.)
+# 
+# #---------------------------
+# # Correlations
+# #---------------------------
+# # x_cor <- cor(train_mtx)
+# # x_cor_rnd <- round(x_cor, 3)
+# # image(1:ncol(x_cor_rnd), 1:ncol(x_cor_rnd), x_cor_rnd[,ncol(x_cor_rnd):1])
+# 
+# #---------------------------
+# # PCA
+# #---------------------------
+# x_pca <- prcomp(train_mtx)
+# k <- 2
+# pca_model_pred <- x_pca$x[, 1:k]
 
-# TODO: Rund the rent to the integer?
+#Get the modeling and validation data
+model_set <- arog_data$modeling_data
+valid_set <- arog_data$validation_data
 
-train_dat <- arog_data$training_data #%>%
-#mutate(totalRent = factor(RoundTo(totalRent, 50)))
-train_mtx <- train_dat %>% select(-totalRent) %>% data.matrix(.)
+#Compute the data matrixes for the data sets
+model_mtx <- prepare_data_matrix(model_set)
+valid_mtx <- prepare_data_matrix(valid_set)
 
-val_dat <- arog_data$validation_data #%>%
-#mutate(totalRent = factor(RoundTo(totalRent, 50)))
-val_mtx <- val_dat %>% select(-totalRent) %>% data.matrix(.)
+#Peform the PCA analysis on the modeling matrix
+pca_result <- prcomp(model_mtx)
 
-#---------------------------
-# Correlations
-#---------------------------
-# x_cor <- cor(train_mtx)
-# x_cor_rnd <- round(x_cor, 3)
-# image(1:ncol(x_cor_rnd), 1:ncol(x_cor_rnd), x_cor_rnd[,ncol(x_cor_rnd):1])
+#Prepare the predictors for the modeling and validation sets
+model_pc_mtx <- prepare_pc_predictors(pca_result, model_mtx)
+valid_pc_mtx <- prepare_pc_predictors(pca_result, valid_mtx)
 
-#---------------------------
-# PCA
-#---------------------------
-x_pca <- prcomp(train_mtx)
-k <- 2
-pca_model_pred <- x_pca$x[, 1:k]
+#Train and validate the LM model
+lm_train_res <- train_model(model_pc_mtx, model_set$totalRent, "lm")
+lm_mdl_res <- evaluate_model(lm_train_res, valid_pc_mtx, valid_set$totalRent)
+lm_mdl_res$rmse
+
+#Train and validate the GLM model
+glm_train_res <- train_model(model_pc_mtx, model_set$totalRent, "glm")
+glm_mdl_res <- evaluate_model(glm_train_res, valid_pc_mtx, valid_set$totalRent)
+glm_mdl_res$rmse
+
+#Train and validate the KNN model
+rbt_train_res <- train_model(model_pc_mtx, model_set$totalRent, "knn",
+                             tuneGrid = data.frame(k = seq(13, 18, 1)))
+rbt_mdl_res <- evaluate_model(rbt_train_res, valid_pc_mtx, valid_set$totalRent)
+rbt_mdl_res$rmse
+
+#Train and validate the Rborist model
+rbt_train_res <- train_model(model_pc_mtx, model_set$totalRent, "Rborist")
+rbt_mdl_res <- evaluate_model(rbt_train_res, valid_pc_mtx, valid_set$totalRent)
+rbt_mdl_res$rmse
 
 # summary(x_pca)
 # 
@@ -718,83 +873,83 @@ pca_model_pred <- x_pca$x[, 1:k]
 #   print(model)
 #   try(train(pca_model_pred, train_dat$totalRent, method = model))
 # }) 
-
-#----------------------------------
-#Random Forest
-#----------------------------------
-rf_fit <- train(pca_model_pred, 
-                train_dat$totalRent,
-                method = "Rborist")
-ggplot(rf_fit$bestTune)
-rf_fit$bestTune
-
-val_rot_mtx <- sweep(val_mtx, 2, colMeans(val_mtx)) %*% x_pca$rotation
-val_rot_mtx_pc <- val_rot_mtx[,1:k]
-totalRent_hat <- predict(rf_fit, val_rot_mtx_pc, type = "raw")
-RMSE(totalRent_hat, val_dat$totalRent)
-
-#----------------------------------
-#KNN
-#----------------------------------
-knn_fit <- train(pca_model_pred,
-                 train_dat$totalRent,
-                 method = "knn",
-                 tuneGrid = data.frame(k = seq(15, 25, 1)))
-ggplot(knn_fit)
-knn_fit$bestTune
-
-val_rot_mtx <- sweep(val_mtx, 2, colMeans(val_mtx)) %*% x_pca$rotation
-val_rot_mtx_pc <- val_rot_mtx[,1:k]
-totalRent_hat <- predict(knn_fit, val_rot_mtx_pc, type = "raw")
-RMSE(totalRent_hat, val_dat$totalRent)
-
-#----------------------------------
-#Loess
-#----------------------------------
-grid <- expand.grid(span = seq(0.15, 0.65, len = 10), degree = 1)
-train_loess <- train(pca_model_pred,
-                    train_dat$totalRent,
-                    method = "gamLoess",
-                    tuneGrid=grid)
-ggplot(train_loess, highlight = TRUE)
-
-#---------------------------
-# Try out knn: FAILED
-#---------------------------
-# NOTES:
-#     * Running took more than 7 hours and did not finish
-#---------------------------
+# 
+# #----------------------------------
+# #Random Forest
+# #----------------------------------
+# rf_fit <- train(pca_model_pred, 
+#                 train_dat$totalRent,
+#                 method = "Rborist")
+# ggplot(rf_fit$bestTune)
+# rf_fit$bestTune
+# 
+# val_rot_mtx <- sweep(val_mtx, 2, colMeans(val_mtx)) %*% x_pca$rotation
+# val_rot_mtx_pc <- val_rot_mtx[,1:k]
+# totalRent_hat <- predict(rf_fit, val_rot_mtx_pc, type = "raw")
+# RMSE(totalRent_hat, val_dat$totalRent)
+# 
+# #----------------------------------
+# #KNN
+# #----------------------------------
+# knn_fit <- train(pca_model_pred,
+#                  train_dat$totalRent,
+#                  method = "knn",
+#                  tuneGrid = data.frame(k = seq(15, 25, 1)))
+# ggplot(knn_fit)
+# knn_fit$bestTune
+# 
+# val_rot_mtx <- sweep(val_mtx, 2, colMeans(val_mtx)) %*% x_pca$rotation
+# val_rot_mtx_pc <- val_rot_mtx[,1:k]
+# totalRent_hat <- predict(knn_fit, val_rot_mtx_pc, type = "raw")
+# RMSE(totalRent_hat, val_dat$totalRent)
+# 
+# #----------------------------------
+# #Loess
+# #----------------------------------
+# grid <- expand.grid(span = seq(0.15, 0.65, len = 10), degree = 1)
+# train_loess <- train(pca_model_pred,
+#                     train_dat$totalRent,
+#                     method = "gamLoess",
+#                     tuneGrid=grid)
+# ggplot(train_loess, highlight = TRUE)
+# 
+# # ---------------------------
+# # Try out knn: FAILED
+# # ---------------------------
+# # NOTES:
+# #     * Running took more than 7 hours and did not finish
+# # ---------------------------
 # dat <- train_dat[1:nrow(train_dat),]
 # #dat$totalRent <- factor(dat$totalRent)
-# knn_fit <- train(totalRent ~ noParkSpaces + interiorQual + 
-#                    condition + floor + heatingType + typeOfFlat + 
-#                    hasKitchen + lift + garden + cellar + noRooms + 
+# knn_fit <- train(totalRent ~ noParkSpaces + interiorQual +
+#                    condition + floor + heatingType + typeOfFlat +
+#                    hasKitchen + lift + garden + cellar + noRooms +
 #                    balcony + newlyConst,
-#                  method = "knn", 
-#                  tuneGrid = data.frame(k = seq(0, 10, 2)), 
+#                  method = "knn",
+#                  tuneGrid = data.frame(k = seq(0, 10, 2)),
 #                  data = dat)
 # ggplot(knn_fit)
 # totalRent_hat <- predict(knn_fit, newdata = val_dat)
 # RMSE(totalRent_hat, val_dat$totalRent)
-
-#---------------------------
-# Try out random forest:
-#---------------------------
-# NOTES:
-#    * Location had to be removed as it can not handle
-#     categorical predictors with more than 53 categories.
-#    * confusionMatrix can only be applied to factored values
-#---------------------------
+# 
+# #---------------------------
+# # Try out random forest:
+# #---------------------------
+# # NOTES:
+# #    * Location had to be removed as it can not handle
+# #     categorical predictors with more than 53 categories.
+# #    * confusionMatrix can only be applied to factored values
+# #---------------------------
 # rf_fit <- randomForest(
-# baseRent ~ noParkSpaces + interiorQual + 
-#   condition + floor + heatingType + typeOfFlat + 
-#   hasKitchen + lift + garden + cellar + noRooms + 
+# baseRent ~ noParkSpaces + interiorQual +
+#   condition + floor + heatingType + typeOfFlat +
+#   hasKitchen + lift + garden + cellar + noRooms +
 #   balcony + newlyConst,
 # data = train_dat)
 # 
 # totalRent_hat <- predict(rf_fit, newdata = val_dat)
 # RMSE(totalRent_hat, val_dat$totalRent)
-## confusionMatrix(totalRent_hat, val_dat$totalRent)$overall["Accuracy"]
+# # confusionMatrix(totalRent_hat, val_dat$totalRent)$overall["Accuracy"]
 
 #@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
