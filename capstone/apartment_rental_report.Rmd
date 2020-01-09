@@ -1177,10 +1177,10 @@ model_pc_mtx <- prepare_pc_predictors(pca_result, model_mtx)
 valid_pc_mtx <- prepare_pc_predictors(pca_result, valid_mtx)
 
 #Train and validate the KNN model
-rbt_train_res <- train_model(model_pc_mtx, model_set$totalRent, "knn",
+knn_train_res <- train_model(model_pc_mtx, model_set$totalRent, "knn",
                              tuneGrid = data.frame(k = seq(13, 18, 1)))
-rbt_mdl_res <- evaluate_model(rbt_train_res, valid_pc_mtx, valid_set$totalRent)
-rbt_mdl_res$rmse
+knn_mdl_res <- evaluate_model(knn_train_res, valid_pc_mtx, valid_set$totalRent)
+knn_mdl_res$rmse
 ```
 
 For more details, see the supplied `apartment_rental_project.R` modeling script.
