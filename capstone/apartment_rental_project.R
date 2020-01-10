@@ -46,7 +46,7 @@ TEST_TO_TRAIN_SET_RATIO <- 0.2
 #Define a sequene of lambdas for regularization
 REGULARIZATION_LAMBDAS <- seq(0, 10, 0.25)
 #The modeling method time out in seconds
-TRAIN_CPU_TIME_OUT_SECONDS <- 3*60*60 #Is set to 3 CPU hours
+TRAIN_CPU_TIME_OUT_SECONDS <- 6*60*60 #Is set to 6 CPU hours
 #The number of principle components to consider
 NUM_PC_TO_CONSIDER <- 2 #Is set to two which explains the 99.3% of data variability
 #Setting it to 6 will explain the 99.99% of data variability
@@ -839,6 +839,8 @@ evaluate_model <- function(train_res, valid_pc_mtx) {
 #    pc_space_data - the modeling and validation set
 #                    dat matrixes in PC space
 #    method - the method name to be used for training
+#    is_save - true if the report is to be saved to the
+#              disk, defaults to TRUE
 #    ... - any other arguments, as tuning grid parameters to be 
 #          forwarded to the train(.) function of the caret package
 # This function returns the updated report list, storing a method
@@ -847,7 +849,8 @@ evaluate_model <- function(train_res, valid_pc_mtx) {
 # updated report version into the file. So that each time a new model
 # is done there is an updated set of data ready to be reported upon.
 #--------------------------------------------------------------------
-train_model_and_report <- function(arog_report, pc_space_data, method, ...) {
+train_model_and_report <- function(arog_report, pc_space_data, method,
+                                   is_save = TRUE, ...) {
   curr_date_time <- function() {return(strftime(Sys.time(),"%D %H:%M:%S"))}
   
   #Run training
@@ -864,14 +867,19 @@ train_model_and_report <- function(arog_report, pc_space_data, method, ...) {
   results <- list(train_res = train_res,
                   eval_res = eval_res)
   
-  #Append the list as a named element to the report
+  #Append the list as a named element to the report,
+  #remove another element with the same name if any
+  entry_name <- paste(method, "_results", sep="")
+  arog_report[[entry_name]] <- NULL
   arog_report <- append(arog_report, list("xxxx" = results))
-  names(arog_report)[which(names(arog_report)=="xxxx")] <- paste(method,"_results",sep="")
+  names(arog_report)[which(names(arog_report)=="xxxx")] <- entry_name
   
   cat("The '", method,"' model RMSE score is", eval_res$rmse,"\n")
   
   #Store the report into the file to be used from the arog_report.Rmd
-  save_report_data(arog_report)
+  if(is_save){
+    save_report_data(arog_report)
+  }
   
   #Return the updated report
   return(arog_report)
