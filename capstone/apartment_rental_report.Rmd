@@ -209,7 +209,7 @@ The remainder of this section first present the data set, then defines the goal 
 
 ## Dataset overview
 
-As stated on the [webpage](`r arog_report$AROG_DATA_SET_SITE_URL`) of the `r arog_report$AROG_DATA_SET_NAME`, it contains `198,379` rental offers scraped from the Germany's biggest real estate online platform ß [ImmobilienScout24](https://www.immobilienscout24.de/). 
+As stated on the [webpage](`r arog_report$AROG_DATA_SET_SITE_URL`) of the `r arog_report$AROG_DATA_SET_NAME`, it contains `r nrow(arog_data$raw_data)` rental offers scraped from the Germany's biggest real estate online platform [ImmobilienScout24](https://www.immobilienscout24.de/). 
 
 The data set consists of a single CSV file: *`r arog_report$AROG_CSV_FILE_NAME`* which only contains offers for rental properties. The data features important rental property attributes, such as the living area size, the rent (both base rent as well as total rent), the location, type of energy, and etc. The `date` column present in the data set defines the time of scraping, which was done on three distinct dates: *2018-09-22*, *2019-05-10* and *2019-10-08*.
 
@@ -261,7 +261,7 @@ Let us now briefly outline the main steps to be performed to reach the previousl
     + Perform data exploration and visualization; summarize insights on the data.
 3. **Describe the modeling approach** -- see the *"Modeling approach"* section:
     + Consider the insights of the data analysis; suggest the way obtain a prediction model.
-4. **Present modeling results** -- see the  *"Results"* section:
+4. **Present modeling results** -- see the  *"Modeling results"* section:
     + Train the model(s); evaluate the model(s); analyze the results.
 5. **Provide concluding remarks** -- see the *"Conclusions"* section:
     + Summarize the results; mention any approach limitations; outline possible future improvements.
@@ -1108,7 +1108,7 @@ From the plot above, there is a clear clasterization of the `totalRent` values. 
 [^13]: For more information see also the [list of caret's Available Models](https://topepo.github.io/caret/available-models.html).
 [^14]: This is a high-performance implementation of a random forest model `"rf"`
 
-The algorithms above will be run with the default parameters, unless tuning grid parameters are required. Therefore we will consider the entire `modeling` set, as any cross-validation will be done within the `train(.)` method of the `caret` package. Last but not least, we will only use the first two principle components of the available predictors data. Any models that will fail to be trained within (`TRAIN_CPU_TIME_OUT_SECONDS = ` `r arog_report$TRAIN_CPU_TIME_OUT_SECONDS`) CPU seconds will be discarded from the further use. Any additional model training parameters, if required, will be presented in the *"Results"* section of this report.
+The algorithms above will be run with the default parameters, unless tuning grid parameters are required. Therefore we will consider the entire `modeling` set, as any cross-validation will be done within the `train(.)` method of the `caret` package. Last but not least, we will only use the first two principle components of the available predictors data. Any models that will fail to be trained within (`TRAIN_CPU_TIME_OUT_SECONDS = ` `r arog_report$TRAIN_CPU_TIME_OUT_SECONDS`) CPU seconds will be discarded from the further use. Any additional model training parameters, if required, will be presented in the *"Modeling results"* section of this report.
 
 ## Modeling code snippets
 *Disclaimer*: This section is EXCLUSIVELY meant for the readers interested in implementation details!
@@ -1302,7 +1302,7 @@ knn_mdl_res$rmse
 
 For more details, see the supplied `apartment_rental_project.R` modeling script.
 
-# Results
+# Modeling results
 <!-- A results section that:
  1. Presents the modeling results 
  2. Discusses the model performance -->
@@ -1596,7 +1596,7 @@ Note that, the mean absolute residual value is `r gam_resid_avg` and the standar
 
 The `RMSE` computed on the `validation` set is `r gam_rmse`, and it took `r gam_time` seconds to train this model.
 
-# Results summary
+## Results summary
 First we shall summarize the training results for the models:
 ```{r, echo=FALSE}
   #Combine the main results from the trained models
@@ -1671,12 +1671,31 @@ Let us also note that from analyzing the residuals, it seemed like `Rborist` sho
  2. Explains its limitations
  3. Suggests future work -->
  
-## Future work
+In this project we have taken upon an ambitious goal of building a prediction system for the apartment rental prices in Germany. To reach this goal we have employed supervised Machine Learning techniques studied within the [Data Science Professional program at HarvardX](https://www.edx.org/professional-certificate/harvardx-data-science). I particular, we have used Bayesian modeling, the `r arog_report$AROG_DATA_SET_NAME`, and Residual Mean Squared error (`RMSE`) for evaluating accuracy. The goal was to get a model that has an `RMSE` $\leq$ `TARGET_RMSE =` `r TARGET_RMSE`, which would mean that our model could predict the rent price within about $50$ Euro, on average.
 
-Check for introducing any bias by data wrangling.
-Use model ensembles.
-Use more principle components.
-Factor the totalRent and use e.g. `knn3`.
+The considered data set contains `r nrow(arog_data$raw_data)` rental offers scraped from the Germany's biggest real estate online platform [ImmobilienScout24](https://www.immobilienscout24.de/). It features important rental property attributes, such as living area size, rent, location, type of energy, and etc. The data scraping was done on three distinct dates: `r unique(arog_data$wrangled_data$date)` which are also part of the data.
+
+We started our work with data wrangling which revealed that the data set has `r ncol(arog_data$raw_data)` data columns. This is a large number and therefore we have done an initial selection of `r ncol(arog_data$selected_data)` columns to be used in this case study. It turned out that the data at hand was also very "dirty". For instance, about $\frac{1}{2}$ of the columns had $2.5$ to $80$% of `N/A` values. Moreover, there were multiple inconsistencies present in the data such as, e.g., lack of coherence between the flat types (e.g. `"roof_storey"`) and the flat floors (e.g. $-1$). In addition, multiple columns had outlying values, e.g. flats at the `r max(arog_data$selected_data$floor, na.rm = TRUE)`'th floors and alike. All of these were handled by various techniques described in the *"Data wrangling"* section of this report. The cleaned and enriched data was then considered for further reshaping. For instance, the flat's location, originally split between multiple columns had to be recombined, and etc.
+
+The resulting wrangled data turned out to be `round(nrow(arog_data$wrangled_data)*100/nrow(arog_data$selected_data),2)`% of the original. We see it as a good result, considering the amount of initial data pollution. Further, the data was split into `modeling` (`(1-arog_report$VALIDATION_TO_MODELING_SET_RATIO)*100`% of data) and `validation` (`r arog_report$VALIDATION_TO_MODELING_SET_RATIO*100`% of data) sets. The former was also split into `training` and `testing` sub-sets to be used for cross-validation but this turned out to be unnecessary[^16].
+
+[^16]: Is explained in one of the subsequent paragraphs.
+
+As the next step, we have performed data analyses. First, we checked the data at hand with respect to: 
+
+* `timing` effects -- whether the scraping dates show any trends
+* `location` effects -- whether the apartment location has a significant impact on rental prices
+
+The former turned out to be not present, whereas the latter one was very vividly present. Then, due to the immense size of the number of predictors (`r ncol(arog_data$wrangled_data) - 1`), we have also performed *correlation analysis* of the predictors' matrix. From which we have observed multiple correlations between different data set columns. The subsequent *Principle Component Analysis* (`PCA`) has revealed that the first two principle components (`PC1` and `PC2`) explain $99.3$% of data variability. This convinced us to use the dimensionality reduction approach employing the `PCA` rotation matrix.
+
+Since it has been shown that it suffices to use only `PC1` and `PC2` to explain most of the data variability, it has been decided NOT to build a new statistical model specifically for this case study, but rather to use the existing ones. The visualization of the total rent versus `PC1` and `PC2` has revealed a clear data clustering suitable for regression models. The modeling approach therefore was to: Take the common *regression models* available via the `caret` package: `lm`, `glm`, `knn`, `Rborist`, `svmLinear`, and `gamLoess`; and use them to predict the total rent prices based on `PC1` and `PC2`.
+
+The model training times are often hard to predict. Therefore, we have decided to limit the training time per model by `r arog_report$TRAIN_CPU_TIME_OUT_SECONDS` CPU seconds. This turned out to be sufficient for all of the models at hand. Also, we did not use any specific model control or tuning parameters. The exception was `knn` for which we defined the `k` range. The results revealed that the `lm` model is the fastest (takes `r lm_time` seconds to train) and has the top performance (`RMSE` = `r lm_rmse`). All the other models, except for comparably performing `glm`; and slightly more accurate, but orders of magnitude slower `svmLinear`, had significantly higher $RMSE$s and longer training times. See the *"Results summary"* section for more details.
+
+In this study, we have successfully performed all the steps needed to build a rental price prediction system. We did not reach the ambitious `TARGET_RMSE` score but we approached it very closely, even without selecting any special model control or tuning parameters.
+
+## Future work
+In the future one may consider extending this case study by comparing more different regression models, as well as tuning the used ones for better performance. Also, model ensembles can be taken to improve on the single model performances. One could also try using six first principle components for training the models, as those explain $99.99$% of predictors variability.
 
 # Appendix A: The complete list of data set columns
 
