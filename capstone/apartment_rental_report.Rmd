@@ -154,7 +154,7 @@ plot_residuals_dist <- function(resid, model,
                            min_x = min(resid), max_x = max(resid),
                            sample_size = length(resid)) {
   data.frame(resid = resid) %>%
-    ggplot(aes(x=resid)) +
+    ggplot(aes(x = resid)) +
     scale_y_log10() +
     scale_x_continuous(limits = c(round(min_x), round(max_x)),
       trans = trans_new( name = "log10",
@@ -168,12 +168,28 @@ plot_residuals_dist <- function(resid, model,
 }
 
 #--------------------------------------------------------------------
+# This function is used to plot the abs(residual) distribution for the totalRent
+#--------------------------------------------------------------------
+plot_abs_residuals_dist <- function(resid_abs, model,
+                           min_x = min(resid_abs), max_x = max(resid_abs),
+                           sample_size = length(resid_abs)) {
+  data.frame(resid_abs = resid_abs) %>%
+    ggplot(aes(x = resid_abs)) +
+    scale_y_log10() +
+    scale_x_continuous(limits = c(round(min_x), round(max_x))) +
+    geom_histogram(binwidth = 10, colour = "black", fill = "lightblue") +
+    labs(x="Residual", y="Count") +
+    ggtitle(paste(paste("The abs(residual) distribution for ", model), " model")) +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"))
+}
+
+#--------------------------------------------------------------------
 #Compute and return the duration in seconds of the model training
 #--------------------------------------------------------------------
 train_dur_sec <- function(mdl_res) {
   start_time <- mdl_res$train_res$start_time
   end_time <- mdl_res$train_res$end_time
-  return(round(as.numeric(end_time - start_time)))
+  return(round(as.numeric(difftime(end_time, start_time,units="sec"))))
 }
 ```
 
@@ -1332,7 +1348,7 @@ Consider the summary of the trained `lm` model:
 lm_fit <- arog_report$lm_results$train_res$fit_model
 summary(lm_fit)
 ```
-The residuals indicate that the fit is not ideal, as confirmed by the plot:
+The residuals are spread rather symmetrically around the zero indicating a good model fit:
 
 ```{r, echo = FALSE, warning= FALSE, out.height = "35%", fig.align="center"}
   #Compute the residuals
@@ -1344,12 +1360,28 @@ The residuals indicate that the fit is not ideal, as confirmed by the plot:
                  MIN_Y_VAL, MAX_Y_VAL,
                  sample_size = NUM_PLOT_SAMPLES)
 ```
-The 'lm' model is on average by `r round(mean(abs(lm_resid)))` Euro off in its price predictions:
+The histogram of the residual values looks as follows: 
+
 ```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
 plot_residuals_dist(lm_resid, "lm",
                     MIN_Y_VAL, MAX_Y_VAL,
                     sample_size = NUM_PLOT_SAMPLES)
 ```
+The absolute residual values are then distributed as follows:
+
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+lm_resid_abs <- abs(lm_resid)
+plot_abs_residuals_dist(lm_resid_abs, "lm", 0, 1000,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
+
+```{r, echo = F}
+lm_resid_avg <- round(mean(lm_resid_abs), 2)
+lm_resid_sd <- round(sd(lm_resid_abs), 2)
+lm_rmse <- round(arog_report$lm_results$eval_res$rmse, 2)
+lm_time <- dseconds(train_dur_sec(arog_report$lm_results))
+```
+Note that, the mean absolute residual value is `r lm_resid_avg` and the standard deviation is `r lm_resid_sd`.
 
 According to the Residual Standard Error, the actual `totalRent` can deviate from the regression plane by $\approx 237$, on average. In other words, given that the intercept (average `totalRent`) is $\approx 801$ Euro, we can say that the percentage error is (any prediction would still be off by) `r round(236.7 * 100 / 801.2, 1)`%.
 
@@ -1357,7 +1389,7 @@ The R-squared ($R^2$) statistic value of $0.8469$ suggests that about $84.6$% of
 
 The large F-statistic value of $4.056e+05$, even given the large number of data points, also indicates a strong relation between the predictor and response (`totalRent`) variables.
 
-Finally, the `lm` model `validation` set `RMSE` is `r round(arog_report$lm_results$eval_res$rmse)`, and it took just `r dseconds(train_dur_sec(arog_report$lm_results))` seconds to train the model.
+The `RMSE` computed on the `validation` set is `r lm_rmse`, and it took just `r lm_time` seconds to train this model.
 
 ### Generalized Linear Model -- `glm`
 Consider the summary of the trained `glm` model: 
@@ -1365,7 +1397,7 @@ Consider the summary of the trained `glm` model:
 glm_fit <- arog_report$glm_results$train_res$fit_model
 summary(glm_fit)
 ```
-Like for `lm`, the residuals indicate that the fit is not ideal, see the plot below:
+The residuals are spread rather symmetrically around the zero indicating a good model fit:
 
 ```{r, echo = FALSE, warning= FALSE, out.height = "35%", fig.align="center"}
   #Compute the residuals
@@ -1377,27 +1409,261 @@ Like for `lm`, the residuals indicate that the fit is not ideal, see the plot be
                  MIN_Y_VAL, MAX_Y_VAL,
                  sample_size = NUM_PLOT_SAMPLES)
 ```
-The 'glm' model is on average by `r round(mean(abs(glm_resid)))` Euro off in its price predictions:
+The histogram of the residual values looks as follows: 
+
 ```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
 plot_residuals_dist(glm_resid, "glm",
                     MIN_Y_VAL, MAX_Y_VAL,
                     sample_size = NUM_PLOT_SAMPLES)
 ```
+The absolute residual values are then distributed as follows:
+
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+glm_resid_abs <- abs(glm_resid)
+plot_abs_residuals_dist(glm_resid_abs, "glm", 0, 1000,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
+
+```{r, echo = F}
+glm_resid_avg <- round(mean(glm_resid_abs), 2)
+glm_resid_sd <- round(sd(glm_resid_abs), 2)
+glm_rmse <- round(arog_report$glm_results$eval_res$rmse, 2)
+glm_time <- dseconds(train_dur_sec(arog_report$glm_results))
+```
+Note that, the mean absolute residual value is `r glm_resid_avg` and the standard deviation is `r glm_resid_sd`.
 
 The one "order of magnitude difference" between the `Null` and `Residual` deviances however indicates a significant effect of the predictors on the model accuracy.
 
-Finally, the `glm` model `validation` set `RMSE` is `r round(arog_report$glm_results$eval_res$rmse)`, and it took just `r dseconds(train_dur_sec(arog_report$glm_results))` seconds to train the model.
+The `RMSE` computed on the `validation` set is `r glm_rmse`, and it took just `r glm_time` seconds to train this model.
 
 ### K-Nearest Neighbors -- `knn`
+Consider the summary of the trained `knn` model: 
+```{r, echo = FALSE}
+knn_fit <- arog_report$knn_results$train_res$fit_model
+summary(knn_fit)
+```
+This is the first and only model that we trained with the tuning grid parameters defined:
+
+```{r, echo = FALSE, out.height = "35%", fig.align="center"}
+plot(knn_fit, main="Tuning grid KNN performance")
+```
+The residuals are spread rather symmetrically around the zero indicating a good model fit:
+
+```{r, echo = FALSE, warning= FALSE, out.height = "35%", fig.align="center"}
+  #Compute the residuals
+  knn_resid <- resid(knn_fit)
+
+  #Plot the residuals
+  plot_residuals(exp_res, knn_resid, "knn", 
+                 MIN_X_VAL, MAX_X_VAL, 
+                 MIN_Y_VAL, MAX_Y_VAL,
+                 sample_size = NUM_PLOT_SAMPLES)
+```
+The histogram of the residual values looks as follows: 
+
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+plot_residuals_dist(knn_resid, "knn",
+                    MIN_Y_VAL, MAX_Y_VAL,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
+The absolute residual values are then distributed as follows:
+
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+knn_resid_abs <- abs(knn_resid)
+plot_abs_residuals_dist(knn_resid_abs, "knn", 0, 1000,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
+
+```{r, echo = F}
+knn_resid_avg <- round(mean(knn_resid_abs), 2)
+knn_resid_sd <- round(sd(knn_resid_abs), 2)
+knn_rmse <- round(arog_report$knn_results$eval_res$rmse, 2)
+knn_time <- dseconds(train_dur_sec(arog_report$knn_results))
+```
+Note that, the mean absolute residual value is `r knn_resid_avg` and the standard deviation is `r knn_resid_sd`.
+
+The `RMSE` computed on the `validation` set is `r knn_rmse`, and it took `r knn_time` seconds to train this model.
 
 ### Random Forest -- `Rborist`
+Consider the summary of the trained `Rborist` model: 
+```{r, echo = FALSE}
+rb_fit <- arog_report$Rborist_results$train_res$fit_model
+summary(rb_fit)
+```
+Even though it is possible, we did not specify the tuning grid parameters for this method.
+
+The residuals are spread rather symmetrically around the zero indicating a good model fit:
+
+```{r, echo = FALSE, warning= FALSE, out.height = "35%", fig.align="center"}
+  #Compute the residuals
+  rb_resid <- resid(rb_fit)
+
+  #Plot the residuals
+  plot_residuals(exp_res, rb_resid, "Rborist", 
+                 MIN_X_VAL, MAX_X_VAL, 
+                 MIN_Y_VAL, MAX_Y_VAL,
+                 sample_size = NUM_PLOT_SAMPLES)
+```
+The histogram of the residual values looks as follows: 
+
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+plot_residuals_dist(rb_resid, "Rborist",
+                    MIN_Y_VAL, MAX_Y_VAL,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
+The absolute residual values are then distributed as follows:
+
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+rb_resid_abs <- abs(rb_resid)
+plot_abs_residuals_dist(rb_resid_abs, "Rborist", 0, 1000,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
+
+```{r, echo = F}
+rb_resid_avg <- round(mean(rb_resid_abs), 2)
+rb_resid_sd <- round(sd(rb_resid_abs), 2)
+rb_rmse <- round(arog_report$Rborist_results$eval_res$rmse, 2)
+rb_time <- dseconds(train_dur_sec(arog_report$Rborist_results))
+```
+Note that, the mean absolute residual value is `r rb_resid_avg` and the standard deviation is `r rb_resid_sd`.
+
+The `RMSE` computed on the `validation` set is `r rb_rmse`, and it took `r rb_time` seconds to train this model.
 
 ### Support Vector Machines -- `svmLinear`
+Consider the summary of the trained `svmLinear` model: 
+```{r, echo = FALSE}
+svm_fit <- arog_report$svmLinear_results$train_res$fit_model
+summary(svm_fit)
+```
+This summary does not contain much insightful information. Moreover, the `resid(.)` method fails on the fit model with the message:
+```{r, eval = FALSE}
+svm_resid <- resid(svm_fit)
+```
+```{r, echo = FALSE}
+message("Error: $ operator not defined for this S4 class")
+```
+Therefore the analysis of the residuals for this model will be skipped.
+
+```{r, echo = FALSE}
+svm_resid_avg <- NA
+svm_resid_sd <- NA
+svm_rmse <- round(arog_report$svmLinear_results$eval_res$rmse, 2)
+svm_time <- dseconds(train_dur_sec(arog_report$svmLinear_results))
+```
+
+The `RMSE` computed on the `validation` set is `r svm_rmse`, and it took `r svm_time` seconds to train this model.
 
 ### Generalized Additive Model -- `gamLoess`
+The trained model summary for the `gamLoess` model is not available so we fast forward to the analysis of its residuals.
+```{r, echo = FALSE}
+gam_fit <- arog_report$gamLoess_results$train_res$fit_model
+```
+
+The residuals are spread rather symmetrically around the zero indicating a good model fit:
+
+```{r, echo = FALSE, warning= FALSE, out.height = "35%", fig.align="center"}
+  #Compute the residuals
+  gam_resid <- resid(gam_fit)
+
+  #Plot the residuals
+  plot_residuals(exp_res, gam_resid, "gamLoess", 
+                 MIN_X_VAL, MAX_X_VAL, 
+                 MIN_Y_VAL, MAX_Y_VAL,
+                 sample_size = NUM_PLOT_SAMPLES)
+```
+The histogram of the residual values looks as follows: 
+
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+plot_residuals_dist(gam_resid, "gamLoess",
+                    MIN_Y_VAL, MAX_Y_VAL,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
+The absolute residual values are then distributed as follows:
+
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+gam_resid_abs <- abs(gam_resid)
+plot_abs_residuals_dist(gam_resid_abs, "gamLoess", 0, 1000,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
+
+```{r, echo = F}
+gam_resid_avg <- round(mean(gam_resid_abs), 2)
+gam_resid_sd <- round(sd(gam_resid_abs), 2)
+gam_rmse <- round(arog_report$gamLoess_results$eval_res$rmse, 2)
+gam_time <- dseconds(train_dur_sec(arog_report$gamLoess_results))
+```
+Note that, the mean absolute residual value is `r gam_resid_avg` and the standard deviation is `r gam_resid_sd`.
+
+The `RMSE` computed on the `validation` set is `r gam_rmse`, and it took `r gam_time` seconds to train this model.
 
 # Results summary
-| Model |Training time | RMSE|
+First we shall summarize the training results for the models:
+```{r, echo=FALSE}
+  #Combine the main results from the trained models
+  add_results <- function(old_res, new_res) {
+    res <- new_res %>% 
+      select(RMSE, Rsquared, MAE, RMSESD, RsquaredSD, MAESD) %>%
+      rbind(old_res, .)
+    return(res)
+  }
+  train_mdl_tbl <- add_results(tibble(), lm_fit$results)
+  train_mdl_tbl <- add_results(train_mdl_tbl, glm_fit$results)
+  knn_br_idx <- which(knn_fit$results$k == knn_fit$bestTune$k)
+  knn_res <- slice(knn_fit$results, knn_br_idx)
+  train_mdl_tbl <- add_results(train_mdl_tbl, knn_res)
+  train_mdl_tbl <- add_results(train_mdl_tbl, rb_fit$results)
+  train_mdl_tbl <- add_results(train_mdl_tbl, svm_fit$results)
+  train_mdl_tbl <- add_results(train_mdl_tbl, gam_fit$results)
+  
+  #Add the 95% confidence interval for the Absolute Residual
+  train_mdl_tbl <- train_mdl_tbl %>%
+    mutate(ARMean = c(lm_resid_avg, glm_resid_avg, knn_resid_avg,
+                            rb_resid_avg, svm_resid_avg, gam_resid_avg),
+           ARSD = c(lm_resid_sd, glm_resid_sd, knn_resid_sd,
+                     rb_resid_sd, svm_resid_sd, gam_resid_sd)) %>%
+    round(., 2)
+  
+  #Set the row names
+  rownames(train_mdl_tbl) <- c("lm", "glm", "knn", "Rborist", "svmLinear", "gamLoess")
+  train_mdl_tbl <- train_mdl_tbl[c("RMSE", "RMSESD", "ARMean",  "ARSD",
+                                   "Rsquared", "RsquaredSD", "MAE", "MAESD")]
+  
+  kable(train_mdl_tbl, caption = "Model Training results",
+      col.names = c("Value", "SD", "Avg", "SD", "Value", "SD", "Value", "SD"),
+      escape = FALSE, align=rep('c', 9)) %>%
+  add_header_above(c("Model " = 1, "RMSE" = 2, "AR" = 2, "Rsquared" = 2 , "MAE" = 2)) %>%
+  kable_styling(latex_options =c("striped", "hold_position"))
+```
+
+In the table above, we have: 
+
+* `RMSE` -- the score of the best fit model on the training data;
+* `Rsquared` -- the R-squared ($R^2$) statistic; 
+* `MAE` -- the mean absolute error;
+* `ARMean` -- the mean absolute residual value; 
+
+and standard deviations of these metrics. We observe that the `Rsquared` and `MAE` for all the models are very close. The `RMSE` of the `lm` and `svmLinear` seem to be lower (better) than the rest. Also the `AR` values seem to be lower (better) for `knn` and `Rborist`. The latter stands out significantly, which however does not correlate with its `RMSE` core, which is higher than that of all the other models. At the moment we do not have explanations for this "fenomena".
+
+Let us now consider the summary of the models' performance on the `validation` set:
+
+```{r, echo = FALSE}
+  valid_mdl_tbl <- tibble(Model = c("lm", "glm", "knn",
+                                    "Rborist", "svmLinear", "gamLoess"),
+                          RMSE = c(lm_rmse, glm_rmse, knn_rmse,
+                                   rb_rmse, svm_rmse, gam_rmse),
+                          Time = c(lm_time, glm_time, knn_time,
+                                   rb_time, svm_time, gam_time)) %>% arrange(RMSE)
+
+  kable(valid_mdl_tbl, caption = "Model Validation results",
+      col.names = c("Model", "RMSE", "Time (sec)"),
+      escape = FALSE, align=rep('c', 3)) %>%
+  add_header_above(c(" " = 1, "Summary" = 2)) %>%
+  kable_styling(latex_options =c("striped", "hold_position"))
+```
+
+The clear top scoring models, with a marginal difference, are `svmLinear`, `lm`, `glm`, and `gamLoess.` Accounting for the training time, the clear winner is `lm`, with `glm` being very close behind. The other models (`Rborist`, and `knn`) performed significantly worse, both in `RMSE` and training times. None of the models was able to achieve the goal `TARGET_RMSE = ` `r TARGET_RMSE`. Yet, the `RMSE` of our top model is very close to that.
+
+Let us also note that from analyzing the residuals, it seemed like `Rborist` should perform better in `RMSE` than other models. The validation results show that it is not the case. Its `RMSE` score of `r rb_rmse` is not impressive. We believe that the reason for that is the over fitting of the model on the training (`modeling`) set. Perhaps, this can be corrected by choosing the right tuning or control parameters for the model but this requires further investigation.
 
 # Conclusions
 <!-- A conclusion section that:
