@@ -50,7 +50,7 @@ TRAIN_CPU_TIME_OUT_SECONDS <- 6*60*60 #Is set to 6 CPU hours
 #The number of principle components to consider
 NUM_PC_TO_CONSIDER <- 2 #Is set to two which explains the 99.3% of data variability
 #Setting it to 6 will explain the 99.99% of data variability
-KNN_K_SEQUENCE <- seq(16, 24, 1) #The k sequence for the tuning grid of KNN
+KNN_K_SEQUENCE <- seq(20, 35, 1) #The k sequence for the tuning grid of KNN
 
 #--------------------------------------------------------------------
 # Define some constant parameters
