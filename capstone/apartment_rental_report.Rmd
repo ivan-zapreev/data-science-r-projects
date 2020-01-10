@@ -148,6 +148,26 @@ plot_residuals <- function(exp_res, resid, model,
 }
 
 #--------------------------------------------------------------------
+# This function is used to plot the residuals distribution for the totalRent
+#--------------------------------------------------------------------
+plot_residuals_dist <- function(resid, model,
+                           min_x = min(resid), max_x = max(resid),
+                           sample_size = length(resid)) {
+  data.frame(resid = resid) %>%
+    ggplot(aes(x=resid)) +
+    scale_y_log10() +
+    scale_x_continuous(limits = c(round(min_x), round(max_x)),
+      trans = trans_new( name = "log10",
+                         transform = log_10_trans,
+                         inverse = log_10_inv),
+      breaks = base_breaks()) +
+    geom_histogram(binwidth = 0.125, colour = "black", fill = "lightblue") +
+    labs(x="Residual", y="Count") +
+    ggtitle(paste(paste("The totalRent residual error distribution for ", model), " model")) +
+    theme(plot.title = element_text(hjust = 0.5, face="bold"))
+}
+
+#--------------------------------------------------------------------
 #Compute and return the duration in seconds of the model training
 #--------------------------------------------------------------------
 train_dur_sec <- function(mdl_res) {
@@ -1314,24 +1334,30 @@ summary(lm_fit)
 ```
 The residuals indicate that the fit is not ideal, as confirmed by the plot:
 
-```{r, echo = FALSE, warning= FALSE}
+```{r, echo = FALSE, warning= FALSE, out.height = "35%", fig.align="center"}
   #Compute the residuals
   lm_resid <- resid(lm_fit)
 
   #Plot the residuals
   plot_residuals(exp_res, lm_resid, "lm", 
                  MIN_X_VAL, MAX_X_VAL, 
-                 MIN_Y_VAL, MAX_Y_VAL, NUM_PLOT_SAMPLES)
+                 MIN_Y_VAL, MAX_Y_VAL,
+                 sample_size = NUM_PLOT_SAMPLES)
 ```
-The model is often off by about $50$--$100$ Euro in the estimates.
+The 'lm' model is on average by `r round(mean(abs(lm_resid)))` Euro off in its price predictions:
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+plot_residuals_dist(lm_resid, "lm",
+                    MIN_Y_VAL, MAX_Y_VAL,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
 
-According to the Residual Standard Error, the actual `totalRent` can deviate from the regression plane by $\approx 236.7$, on average. In other words, given that the intercept (average `totalRent`) is $801.2$ Euro, we can say that the percentage error is (any prediction would still be off by) `r round(236.7 * 100 / 801.2,1)`%.
+According to the Residual Standard Error, the actual `totalRent` can deviate from the regression plane by $\approx 237$, on average. In other words, given that the intercept (average `totalRent`) is $\approx 801$ Euro, we can say that the percentage error is (any prediction would still be off by) `r round(236.7 * 100 / 801.2, 1)`%.
 
 The R-squared ($R^2$) statistic value of $0.8469$ suggests that about $84.6$% of the `totalRent` variance is indeed explained by the predictor variables (`PC1`, and `PC2`).
 
 The large F-statistic value of $4.056e+05$, even given the large number of data points, also indicates a strong relation between the predictor and response (`totalRent`) variables.
 
-Finally, the `lm` model `validation` set `RMSE` is `r arog_report$lm_results$eval_res$rmse`, and it took just `r dseconds(train_dur_sec(arog_report$lm_results))` to train the model.
+Finally, the `lm` model `validation` set `RMSE` is `r round(arog_report$lm_results$eval_res$rmse)`, and it took just `r dseconds(train_dur_sec(arog_report$lm_results))` seconds to train the model.
 
 ### Generalized Linear Model -- `glm`
 Consider the summary of the trained `glm` model: 
@@ -1341,7 +1367,7 @@ summary(glm_fit)
 ```
 Like for `lm`, the residuals indicate that the fit is not ideal, see the plot below:
 
-```{r, echo = FALSE, warning= FALSE}
+```{r, echo = FALSE, warning= FALSE, out.height = "35%", fig.align="center"}
   #Compute the residuals
   glm_resid <- resid(glm_fit)
 
@@ -1349,13 +1375,18 @@ Like for `lm`, the residuals indicate that the fit is not ideal, see the plot be
   plot_residuals(exp_res, glm_resid, "glm", 
                  MIN_X_VAL, MAX_X_VAL, 
                  MIN_Y_VAL, MAX_Y_VAL,
-                 sample_size =NUM_PLOT_SAMPLES)
+                 sample_size = NUM_PLOT_SAMPLES)
 ```
-This model is also often off by about $50$--$100$ Euro in the estimates. The residuals are distributed very similarly as in the case of the `lm` model.
+The 'glm' model is on average by `r round(mean(abs(glm_resid)))` Euro off in its price predictions:
+```{r, echo = FALSE, warning = FALSE, out.height = "35%", fig.align="center"}
+plot_residuals_dist(glm_resid, "glm",
+                    MIN_Y_VAL, MAX_Y_VAL,
+                    sample_size = NUM_PLOT_SAMPLES)
+```
 
-The one order of magnitude difference between the `Null` and `residual` deviances indicates a significant effect of the predictors on the model accuracy.
+The one "order of magnitude difference" between the `Null` and `Residual` deviances however indicates a significant effect of the predictors on the model accuracy.
 
-Finally, the `glm` model `validation` set `RMSE` is `r arog_report$glm_results$eval_res$rmse`, and it took just `r dseconds(train_dur_sec(arog_report$glm_results))` to train the model.
+Finally, the `glm` model `validation` set `RMSE` is `r round(arog_report$glm_results$eval_res$rmse)`, and it took just `r dseconds(train_dur_sec(arog_report$glm_results))` seconds to train the model.
 
 ### K-Nearest Neighbors -- `knn`
 
