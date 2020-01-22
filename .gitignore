@@ -41,3 +41,5 @@ vignettes/*.pdf
 /capstone/ml-10M100K/
 *.csv
 *.rda
+
+.DS_Store
