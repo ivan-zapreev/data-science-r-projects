@@ -488,44 +488,310 @@ hist(ratios)
 # The log of ratios are of course symmetric around 0
 logratios <- log2(ratios)
 hist(logratios)
+mypar(1,1)
 
 #----------------------------------------------------------------------------------
 # Median, MAD, and Spearman Correlation Exercises
 
+# We will use one of the datasets included in R, which contains weight of chicks
+# in grams as they grow from day 0 to day 21. This dataset also splits up the
+# chicks by different protein diets, which are coded from 1 to 4. 
+data(ChickWeight)
 
+# The weights of all observations over time and color the points to represent the Diet:
+head(ChickWeight)
+plot( ChickWeight$Time, ChickWeight$weight, col=ChickWeight$Diet)
+
+# Reshape the data so that each row is a chick
+chick <- reshape(ChickWeight, 
+                 idvar = c("Chick","Diet"), 
+                 timevar = "Time",
+                 direction = "wide")
+head(chick)
+
+# Remove any chicks that have missing observations at any time points
+chick <- na.omit(chick)
 
 #--------------------------------------
 # Median, MAD, and Spearman Correlation Exercises #1
 
+# Focus on the chick weights on day 4 (check the column names of 'chick' and note the numbers). 
+# How much does the average of chick weights at day 4 increase if we add an outlier measurement 
+# of 3000 grams? Specifically, what is the average weight of the day 4 chicks, including the 
+# outlier chick, divided by the average of the weight of the day 4 chicks without the outlier.
+# Hint: use c to add a number to a vector. 
 
+cwd4 <- chick[, "weight.4"]
+boxplot(cwd4)
+
+cwd4_b <- c(cwd4, 3000)
+boxplot(cwd4_b)
+
+abs(mean(cwd4) - mean(cwd4_b))
+
+mean(cwd4_b)/mean(cwd4)
+# 2.062407
 
 #--------------------------------------
 # Median, MAD, and Spearman Correlation Exercises #2
 
+# In exercise 1, we saw how sensitive the mean is to outliers. Now let's see what 
+# happens when we use the median instead of the mean. Compute the same ratio, but
+# now using median instead of mean. Specifically, what is the median weight of the
+# day 4 chicks, including the outlier chick, divided by the median of the weight
+# of the day 4 chicks without the outlier. 
 
+median(cwd4_b)/median(cwd4)
+# 1
 
 #--------------------------------------
 # Median, MAD, and Spearman Correlation Exercises #3
 
+# Now try the same thing with the sample standard deviation (the sd function in R).
+# Add a chick with weight 3000 grams to the chick weights from day 4. How much does
+# the standard deviation change? What's the standard deviation with the outlier 
+# chick divided by the standard deviation without the outlier chick? 
 
+sd(cwd4_b)/sd(cwd4)
+# 101.2859
 
 #--------------------------------------
 # Median, MAD, and Spearman Correlation Exercises #4
 
+# Compare the result above to the median absolute deviation in R, which is calculated 
+# with the mad function. Note that the mad is unaffected by the addition of a single 
+# outlier. The mad function in R includes the scaling factor 1.4826, such that mad and 
+# sd are very similar for a sample from a normal distribution. What's the MAD with the 
+# outlier chick divided by the MAD without the outlier chick?
 
+mad(cwd4_b)/mad(cwd4)
+# 1
 
 #--------------------------------------
 # Median, MAD, and Spearman Correlation Exercises #5
 
+# Our last question relates to how the Pearson correlation is affected by an outlier as 
+# compared to the Spearman correlation. The Pearson correlation between x and y is given
+# in R by cor(x,y). The Spearman correlation is given by cor(x,y,method="spearman").
+
+# Plot the weights of chicks from day 4 and day 21. We can see that there is some general 
+# trend, with the lower weight chicks on day 4 having low weight again on day 21, and
+# likewise for the high weight chicks.
+
+cwd21 <- chick[, "weight.21"]
+
+#plot(cwd4, cwd21)
+plot((cwd4-mean(cwd4))/sd(cwd4), (cwd21-mean(cwd21))/sd(cwd21))
+abline(0, cor(cwd4, cwd21))
+
+# Calculate the Pearson correlation of the weights of chicks from day 4 and day 21. Now 
+# calculate how much the Pearson correlation changes if we add a chick that weighs 3000
+# on day4 and 3000 on day 21. Again, divide the Pearson correlation with the outlier chick
+# over the Pearson correlation computed without the outliers.
+
+cwd21_b <- c(cwd21, 3000)
+
+cor(cwd4_b, cwd21_b)/cor(cwd4, cwd21)
+# 2.370719
+
+cor(cwd4_b, cwd21_b, method="spearman")/cor(cwd4, cwd21, method="spearman")
+# 1.084826
+
+cor(rank(cwd4_b), rank(cwd21_b))/cor(rank(cwd4), rank(cwd21))
+# 1.084826
+
 #----------------------------------------------------------------------------------
+# Wilcoxon Rank Sum Test
 
+# Since the t-test is based on mean and standard deviation measures it is susceptible
+# to outliers. We perform a t-test on data for which the null is true.
 
+set.seed(779, sample.kind = "Rounding") ##779 picked for illustration purposes
+N <- 25
+x <- rnorm(N, 0, 1)
+y <- rnorm(N, 0, 1)
 
+# Compute the t-statistics and the p value thereof is:
+cat("t-test pval:", t.test(x, y)$p.value)
+# 0.1589672
+# The p-value is larger than 0.05 so we accept the NULL hypothesis
+# Which we know is true by construction
+
+# Create outliers:
+x[1] <- 5
+x[2] <- 7
+
+# Compute the t-statistics and the p value thereof is:
+cat("t-test pval:", t.test(x, y)$p.value)
+# 0.04439948
+# The p-value is smaller than 0.05 so we can negate the NULL hypothesis
+# Which we known was true by construction before introfucting the two outliers
+
+# An alternative to the t-test can be the Wilcox test, which is based on ranks
+cat("Wilcox test pval:", wilcox.test(x, y)$p.value)
+# 0.1310212
+# The p-value is larger than 0.05 so we accept the NULL hypothesis
+# Which we known was true by construction before introfucting the two outliers
+
+library(rafalib)
+mypar(1,2)
+
+# Plot the data as is, as notice that the data seems pretty similar except for the two outliers in x
+stripchart(list(x, y), vertical = TRUE,
+           ylim = c(-7, 7), ylab = "Observations",
+           pch = 21, bg = 1)
+abline(h=0)
+
+# The idea behind this test is:
+# 1) combine all the data,
+# 2) turn the values into ranks,
+# 3) separate them back into their groups,
+# 4) compute the sum or average rank and perform a test.
+
+xrank <- rank(c(x, y))[seq(along = x)]
+yrank <- rank(c(x, y))[-seq(along = y)]
+
+stripchart(list(xrank, yrank), vertical = TRUE,
+           ylab = "Ranks", pch = 21, bg = 1, cex = 1.25)
+abline(h=median(c(xrank, yrank)))
+
+ws <- sapply(x, function(z){
+  rank(c(z,y))[1]-1 
+})
+
+text( rep(1.05, length(ws)), xrank, ws, cex = 0.8)
+
+# W is the sum of the ranks for the first group relative to the second group
+W <-sum(ws) 
+
+# We can compute an exact p-value for W based on combinatorics.
+# We can also use the CLT since statistical theory tells us that this W is approximated by the normal distribution.
+
+# Why not to just use???????
+cat("t-test pval:", t.test(rank(x), rank(y))$p.value)
+# The p-valie is 1 so the NULL hypothesis is definitely good
 
 #----------------------------------------------------------------------------------
+# Mann-Whitney-Wilcoxon Test Exercises
 
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+library(dplyr)
 
+# We will use one of the datasets included in R, which contains weight of chicks
+# in grams as they grow from day 0 to day 21. This dataset also splits up the
+# chicks by different protein diets, which are coded from 1 to 4. 
+data(ChickWeight)
 
+# The weights of all observations over time and color the points to represent the Diet:
+head(ChickWeight)
+plot( ChickWeight$Time, ChickWeight$weight, col=ChickWeight$Diet)
+
+# Reshape the data so that each row is a chick
+chick <- reshape(ChickWeight, 
+                 idvar = c("Chick","Diet"), 
+                 timevar = "Time",
+                 direction = "wide")
+head(chick)
+
+# Remove any chicks that have missing observations at any time points
+chick <- na.omit(chick)
+
+#--------------------------------------
+# Mann-Whitney-Wilcoxon Test Exercises #1
+
+# Save the weights of the chicks on day 4 from diet 1 as a vector x.
+x <- chick %>% filter(Diet == 1) %>% pull("weight.4") %>% unlist()
+
+# Save the weights of the chicks on day 4 from diet 4 as a vector y.
+y <- chick %>% filter(Diet == 4) %>% pull("weight.4") %>% unlist()
+
+# Perform a t-test comparing x and y (in R the function t.test(x,y) will perform the test). 
+ttval <- t.test(x, y)
+ttval$p.value
+# 7.320259e-06
+
+# Then perform a Wilcoxon test of x and y (in R the function wilcox.test(x,y) will perform the test). 
+wtval <- wilcox.test(x, y)
+wtval$p.value
+# 0.0002011939
+
+# A warning will appear that an exact p-value cannot be calculated with ties,
+# so an approximation is used, which is fine for our purposes.
+
+# Perform a t-test of x and y, after adding a single chick of weight 200 grams to x (the diet 1 chicks).
+x_b <- c(x, 200)
+ttval_b <- t.test(x_b, y)
+
+# What is the p-value from this test?
+ttval_b$p.value
+# 0.9380347
+
+#--------------------------------------
+# Mann-Whitney-Wilcoxon Test Exercises #2
+
+# Do the same for the Wilcoxon test. The Wilcoxon test is robust to the outlier.
+# In addition, it has less assumptions that the t-test on the distribution of
+# the underlying data.
+wtval_b <- wilcox.test(x_b, y)
+wtval_b$p.value
+# 0.0009840921
+
+#--------------------------------------
+# Mann-Whitney-Wilcoxon Test Exercises #3
+
+# We will now investigate a possible downside to the Wilcoxon-Mann-Whitney test statistic.
+# Using the following code to make three boxplots, showing the true Diet 1 vs 4 weights,
+# and then two altered versions: one with an additional difference of 10 grams and one with
+# an additional difference of 100 grams. Use the x and y as defined above, NOT the ones with
+# the added outlier. 
+
+ibrary(rafalib)
+mypar(1,3)
+boxplot(x,y, main = "Original")
+boxplot(x,y+10, main = "y + 10")
+boxplot(x,y+100, main = "y + 100")
+
+# What is the difference in t-test statistic (obtained by t.test(x,y)$statistic) between
+# adding 10 and adding 100 to all the values in the group 'y'? Take the the t-test 
+# statistic with x and y+10 and subtract the t-test statistic with x and y+100. 
+# The value should be positive.
+
+t.test(x, y + 10)$statistic - t.test(x, y + 100)$statistic
+# 67.75097
+
+#--------------------------------------
+# Mann-Whitney-Wilcoxon Test Exercises #4
+
+# Examine the Wilcoxon test statistic for x and y+10 and for x and y+100. 
+
+wilcox.test(x, y + 10)$statistic - wilcox.test(x, y + 100)$statistic
+# 0
+wilcox.test(x, y + 10)$statistic
+# 0
+
+wilcox.test(x, y + 10)$p.value - wilcox.test(x, y + 100)$p.value
+# 0
+wilcox.test(x, y + 10)$p.value
+# 5.032073e-05
+
+# Because the Wilcoxon works on ranks, once the two groups show complete separation,
+# that is all points from group 'y' are above all points from group 'x', the statistic
+# will not change, regardless of how large the difference grows. Likewise, the p-value
+# has a minimum value, regardless of how far apart the groups are. This means that the
+# Wilcoxon test can be considered less powerful than the t-test in certain contexts.
+# In fact, for small sample sizes, the p-value can't be very small, even when the
+# difference is very large.
+
+# What is the p-value if we compare c(1,2,3) to c(4,5,6) using a Wilcoxon test?
+wilcox.test(c(1, 2, 3), c(4, 5, 6))$p.value
+# 0.1
+
+#--------------------------------------
+# Mann-Whitney-Wilcoxon Test Exercises #5
+
+# What is the p-value if we compare c(1,2,3) to c(400,500,600) using a Wilcoxon test?
+wilcox.test(c(1, 2, 3), c(400, 500, 600))$p.value
+# 0.1
 
 #----------------------------------------------------------------------------------
 
